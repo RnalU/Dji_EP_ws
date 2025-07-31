@@ -1,0 +1,15 @@
+<launch>
+    <!-- EP Robot Driver Launch File -->
+    
+    <!-- Robot Driver Node -->
+    <node name="ep_robot_driver" pkg="driver_pkg" type="ros_driver.py" output="screen">
+        <!-- Robot connection parameters -->
+        <param name="sn" type="string" value="3JKDH5D00169PE" />
+        <param name="protocol" type="string" value="udp" />
+        
+        <!-- Motion parameters -->
+        <param name="linear_scale" type="double" value="0.5" />
+        <param name="angular_scale" type="double" value="30.0" />
+        <param name="default_speed" type="double" value="0.7" />
+    </node>
+</launch>

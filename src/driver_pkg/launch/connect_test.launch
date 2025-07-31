@@ -1,0 +1,4 @@
+<launch> 
+    <node name="EP_connect_test" pkg="driver_pkg" type="sta_connect.py"  output="screen">
+    </node>
+</launch>
