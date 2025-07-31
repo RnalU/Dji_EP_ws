@@ -3,7 +3,7 @@ import rospy
 import math
 import threading
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Empty
 from robomaster import robot, led
 
 class EPRobotDriver:
@@ -28,6 +28,9 @@ class EPRobotDriver:
         rospy.Subscriber("/move_distance", Float32MultiArray, self.move_distance_cb)
         rospy.Subscriber("/wheel_speeds", Float32MultiArray, self.wheel_speeds_cb)
         
+        # ROS发布者
+        self.move_completed_pub = rospy.Publisher('/move_completed', Empty, queue_size=1)
+
         # ROS服务
         # self.stop_service = rospy.Service('~emergency_stop', Trigger, self.emergency_stop)
         
@@ -52,6 +55,7 @@ class EPRobotDriver:
             # 设置LED状态
             self.led.set_led(comp=led.COMP_ALL, r=0, g=255, b=0, effect=led.EFFECT_ON)
             rospy.loginfo(f"Robot connected! SN: {self.robot.get_sn()}")
+            rospy.loginfo(f"Set Params - Linear Scale: {self.linear_scale}, Angular Scale: {self.angular_scale}, Default Speed: {self.default_speed}")
             
         except Exception as e:
             rospy.logerr(f"Robot initialization failed: {str(e)}")
@@ -93,6 +97,9 @@ class EPRobotDriver:
                             z_speed=self.angular_scale).wait_for_completed()
                             
             rospy.loginfo(f"Moved: x={x}m, y={y}m, z={z}deg")
+            
+            # 发布移动完成消息
+            self.move_completed_pub.publish(Empty())
             
         except Exception as e:
             rospy.logerr(f"Movement failed: {str(e)}")
