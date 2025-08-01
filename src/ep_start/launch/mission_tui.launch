@@ -1,0 +1,14 @@
+<launch>
+    <!-- 启动任务控制器节点 -->
+    <node name="mission_controller" pkg="ep_start" type="start.py" output="screen">
+        <!-- 任务参数配置 -->
+        <param name="point1" value="[2.0, 0.0, 0.0]" />
+        <param name="point2" value="[5.0, 0.0, 0.0]" />
+        <param name="charge_point" value="[0.0, 2.0, 0.0]" />
+        <param name="home_point" value="[0.0, 0.0, 0.0]" />
+        <param name="charging_time" value="30.0" />
+    </node>
+
+    <!-- 启动TUI界面 -->
+    <node name="mission_tui" pkg="ep_start" type="mission_tui.py" output="screen" />
+</launch>
