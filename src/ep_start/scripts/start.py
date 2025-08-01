@@ -27,9 +27,9 @@ class MissionController:
         rospy.init_node('mission_controller', log_level=rospy.INFO)
         
         # 任务参数
-        point1_param = rospy.get_param("~point1", "[2.0, 0.0, 0.0]")  # [x, y, z]
-        point2_param = rospy.get_param("~point2", "[5.0, 0.0, 0.0]")
-        charge_point_param = rospy.get_param("~charge_point", "[0.0, 2.0, 0.0]")
+        point1_param = rospy.get_param("~point1", "[2.554, -0.5156, 0.0]")  # [x, y, z]
+        point2_param = rospy.get_param("~point2", "[5.0, 1.29, 0.0]")
+        charge_point_param = rospy.get_param("~charge_point", "[7.0, 0.0, 0.0]")
         home_point_param = rospy.get_param("~home_point", "[0.0, 0.0, 0.0]")
         
         # 解析参数为浮点数列表 目标点
@@ -38,6 +38,7 @@ class MissionController:
         self.point2 = [float(x) for x in ast.literal_eval(point2_param)] if isinstance(point2_param, str) else [float(x) for x in point2_param]
         self.charge_point = [float(x) for x in ast.literal_eval(charge_point_param)] if isinstance(charge_point_param, str) else [float(x) for x in charge_point_param]
         self.home_point = [float(x) for x in ast.literal_eval(home_point_param)] if isinstance(home_point_param, str) else [float(x) for x in home_point_param]
+        
         
         # 充电时间
         self.charging_time = float(rospy.get_param("~charging_time", 5.0))  # 秒
@@ -156,6 +157,7 @@ class MissionController:
             if not self.move_in_progress:
                 rospy.loginfo("Moving to charging station...")
                 self.send_move_command(self.charge_point)
+                self.send_move_command([.0, .0, 180])  # 旋转180度
                 self.state_timeout = rospy.Duration(30)
         
         elif self.current_state == MissionState.CHARGING:
@@ -171,6 +173,7 @@ class MissionController:
             if not self.move_in_progress:
                 rospy.loginfo("Returning to home position...")
                 self.send_move_command(self.home_point)
+                self.send_move_command([.0, .0, 180])  # 旋转90度
                 self.state_timeout = rospy.Duration(45)
     
     def transition_state(self, new_state):
