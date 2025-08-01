@@ -2,27 +2,24 @@
 import rospy
 import math
 import threading
-import actionlib
 from enum import Enum, auto
-from actionlib import SimpleActionServer
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray, Empty, Bool
 from robomaster import robot, led
-from ep_start.msg import MissionAction, MissionFeedback, MissionResult  # 需要自定义Action消息
 
 class MissionState(Enum):
     """任务状态枚举"""
-    IDLE = auto()
-    STARTING = auto()
-    MOVING_TO_POINT1 = auto()
-    LAUNCHING_DRONE = auto()
-    MOVING_TO_POINT2 = auto()
-    WAITING_FOR_DRONE = auto()
-    MOVING_TO_CHARGE = auto()
-    CHARGING = auto()
-    RETURNING_HOME = auto()
-    COMPLETED = auto()
-    FAILED = auto()
+    IDLE = auto()                   # 空闲状态
+    STARTING = auto()               # 任务开始
+    MOVING_TO_POINT1 = auto()       # 移动到点1
+    LAUNCHING_DRONE = auto()        # 无人机起飞
+    MOVING_TO_POINT2 = auto()       # 移动到点2
+    WAITING_FOR_DRONE = auto()      # 等待无人机降落
+    MOVING_TO_CHARGE = auto()       # 移动到充电站
+    CHARGING = auto()               # 等待充电
+    RETURNING_HOME = auto()         # 返回出发点
+    COMPLETED = auto()              # 任务结束
+    FAILED = auto()                 # 状态失败
 
 class MissionController:
     def __init__(self):
@@ -35,34 +32,26 @@ class MissionController:
         charge_point_param = rospy.get_param("~charge_point", "[0.0, 2.0, 0.0]")
         home_point_param = rospy.get_param("~home_point", "[0.0, 0.0, 0.0]")
         
-        # 解析参数为浮点数列表
+        # 解析参数为浮点数列表 目标点
         import ast
         self.point1 = [float(x) for x in ast.literal_eval(point1_param)] if isinstance(point1_param, str) else [float(x) for x in point1_param]
         self.point2 = [float(x) for x in ast.literal_eval(point2_param)] if isinstance(point2_param, str) else [float(x) for x in point2_param]
         self.charge_point = [float(x) for x in ast.literal_eval(charge_point_param)] if isinstance(charge_point_param, str) else [float(x) for x in charge_point_param]
         self.home_point = [float(x) for x in ast.literal_eval(home_point_param)] if isinstance(home_point_param, str) else [float(x) for x in home_point_param]
         
-        self.charging_time = float(rospy.get_param("~charging_time", 30.0))  # 秒
+        # 充电时间
+        self.charging_time = float(rospy.get_param("~charging_time", 5.0))  # 秒
         
         # 状态跟踪
         self.current_state = MissionState.IDLE
         self.last_state_change = rospy.Time.now()
-        self.state_timeout = rospy.Duration(60)  # 默认状态超时时间
+        self.state_timeout = rospy.Duration(30)  # 默认状态超时时间
         
-        # Action服务器
-        self.action_server = SimpleActionServer(
-            'mission_control', 
-            MissionAction, 
-            execute_cb=self.execute_cb, 
-            auto_start=False
-        )
-        self.action_server.start()
-        
-        # 发布器
+        # 发布话题
         self.drone_cmd_pub = rospy.Publisher('/drone/command', Empty, queue_size=1)
         self.move_pub = rospy.Publisher('/move_distance', Float32MultiArray, queue_size=1)
         
-        # 订阅器
+        # 订阅话题
         rospy.Subscriber('/drone/status', Bool, self.drone_status_cb)
         rospy.Subscriber('/move_completed', Empty, self.move_completed_cb)
         
@@ -70,57 +59,61 @@ class MissionController:
         self.drone_landed = False
         self.move_completed = False
         
+        # 状态机运行标志
+        self.running = False
+        
         rospy.loginfo("Mission Controller Initialized")
+
+        # 启动任务
+        self.start_mission()
     
-    def execute_cb(self, goal):
-        """Action服务器回调函数"""
-        rospy.loginfo("Starting mission...")
-        result = MissionResult()
-        
-        try:
-            # 重置状态
-            self.current_state = MissionState.STARTING
-            self.drone_landed = False
-            self.move_completed = False
+    def start_mission(self):
+        """启动任务"""
+        if self.current_state != MissionState.IDLE:
+            rospy.logwarn("Mission is already running or not in IDLE state")
+            return False
             
-            # 主任务循环
-            rate = rospy.Rate(10)  # 10Hz
-            while not rospy.is_shutdown() and not self.action_server.is_preempt_requested():
-                # 处理当前状态
-                self.handle_state()
-                
-                # 检查任务完成
-                if self.current_state == MissionState.COMPLETED:
-                    rospy.loginfo("Mission completed successfully!")
-                    result.success = True
-                    self.action_server.set_succeeded(result)
-                    return
-                
-                # 检查任务失败
-                if self.current_state == MissionState.FAILED:
-                    rospy.logerr("Mission failed!")
-                    result.success = False
-                    self.action_server.set_aborted(result)
-                    return
-                
-                # 发送反馈
-                feedback = MissionFeedback()
-                feedback.current_state = self.current_state.name
-                feedback.progress = self.get_progress()
-                self.action_server.publish_feedback(feedback)
-                
-                rate.sleep()
-                
-            # 处理任务被抢占
-            if self.action_server.is_preempt_requested():
-                rospy.logwarn("Mission preempted!")
-                self.action_server.set_preempted()
-                self.transition_state(MissionState.FAILED)
+        rospy.loginfo("Starting mission...")
         
-        except Exception as e:
-            rospy.logerr(f"Mission execution failed: {str(e)}")
-            result.success = False
-            self.action_server.set_aborted(result)
+        # 重置状态
+        self.current_state = MissionState.STARTING
+        self.drone_landed = False
+        self.move_completed = False
+        self.running = True
+        
+        # 启动状态机线程
+        self.state_machine_thread = threading.Thread(target=self._run_state_machine)
+        self.state_machine_thread.daemon = True
+        self.state_machine_thread.start()
+        
+        return True
+    
+    def _run_state_machine(self):
+        """运行状态机的主循环"""
+        rate = rospy.Rate(10)  # 10Hz
+        while not rospy.is_shutdown() and self.running:
+            # 处理当前状态
+            self.handle_state()
+            
+            # 检查任务完成
+            if self.current_state == MissionState.COMPLETED:
+                rospy.loginfo("Mission completed successfully!")
+                self.running = False
+                return
+            
+            # 检查任务失败
+            if self.current_state == MissionState.FAILED:
+                rospy.logerr("Mission failed!")
+                self.running = False
+                return
+            
+            rate.sleep()
+    
+    def stop_mission(self):
+        """停止任务"""
+        rospy.logwarn("Mission stopped!")
+        self.running = False
+        self.current_state = MissionState.FAILED
     
     def handle_state(self):
         """处理当前状态"""
@@ -131,7 +124,7 @@ class MissionController:
             return
         
         # 状态处理
-        if self.current_state == MissionState.STARTING:
+        if self.current_state == MissionState.STARTING: 
             rospy.loginfo("Mission starting...")
             self.transition_state(MissionState.MOVING_TO_POINT1)
         
@@ -189,6 +182,7 @@ class MissionController:
         # 重置状态相关变量
         if new_state != MissionState.WAITING_FOR_DRONE:
             self.drone_landed = False
+
         if new_state != MissionState.CHARGING:
             if hasattr(self, 'charge_start_time'):
                 del self.charge_start_time
