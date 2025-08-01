@@ -1,0 +1,10 @@
+# 定义Mission Action
+# 目标部分 (Goal)
+---
+# 结果部分 (Result)
+bool success
+string message
+---
+# 反馈部分 (Feedback)
+string current_state
+float32 progress
