@@ -27,6 +27,7 @@ class EPRobotDriver:
         rospy.Subscriber("/cmd_vel", Twist, self.cmd_vel_cb)
         rospy.Subscriber("/move_distance", Float32MultiArray, self.move_distance_cb)
         rospy.Subscriber("/wheel_speeds", Float32MultiArray, self.wheel_speeds_cb)
+        rospy.Subscriber("/set_speed", Float32MultiArray, self.set_speed_cb)  # 添加速度设置订阅者
         
         # ROS发布者
         self.move_completed_pub = rospy.Publisher('/move_completed', Empty, queue_size=1)
@@ -119,6 +120,24 @@ class EPRobotDriver:
             self.chassis.drive_wheels(w1=w1, w2=w2, w3=w3, w4=w4)
             rospy.logdebug(f"Set wheel speeds: {w1}, {w2}, {w3}, {w4}")
 
+    def set_speed_cb(self, msg):
+        """设置速度参数回调"""
+        if len(msg.data) != 3:
+            rospy.logwarn("Invalid set_speed command! Need 3 values: [linear_scale, angular_scale, default_speed]")
+            return
+            
+        # 更新速度参数
+        old_linear_scale = self.linear_scale
+        old_angular_scale = self.angular_scale
+        old_default_speed = self.default_speed
+        
+        self.linear_scale = msg.data[0] if msg.data[0] > 0 else self.linear_scale
+        self.angular_scale = msg.data[1] if msg.data[1] > 0 else self.angular_scale
+        self.default_speed = msg.data[2] if msg.data[2] > 0 else self.default_speed
+        
+        rospy.loginfo(f"Speed parameters updated - Linear Scale: {old_linear_scale} -> {self.linear_scale}, "
+                      f"Angular Scale: {old_angular_scale} -> {self.angular_scale}, "
+                      f"Default Speed: {old_default_speed} -> {self.default_speed}")
 
     def shutdown(self):
         """关闭节点时的清理"""

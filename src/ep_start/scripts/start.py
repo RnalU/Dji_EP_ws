@@ -59,6 +59,7 @@ class MissionController:
         # 发布话题
         self.drone_cmd_pub = rospy.Publisher('/drone/command', Empty, queue_size=1)
         self.move_pub = rospy.Publisher('/move_distance', Float32MultiArray, queue_size=1)
+        self.set_speed_pub = rospy.Publisher('/set_speed', Float32MultiArray, queue_size=1)  # 添加速度设置发布者
         
         # 订阅话题
         rospy.Subscriber('/drone/status', Bool, self.drone_status_cb)
@@ -144,10 +145,11 @@ class MissionController:
 
             elif self.current_state == MissionState.WAITING_FOR_DRONE:
                 rospy.logwarn("Waiting for drone timed out, transitioning to MOVING_TO_CHARGE state")
-                self.transition_state(MissionState.CHARGING)
+                self.transition_state(MissionState.MOVING_TO_CHARGE)
 
             else:
                 rospy.logwarn(f"Unhandled state timeout for {self.current_state.name}")
+                self.transition_state(MissionState.FAILED)
             return
         
         # 发车
@@ -176,7 +178,7 @@ class MissionController:
             if not self.move_in_progress:
                 rospy.loginfo("Moving to Point 2...")
                 self.send_move_command(self.point2)
-                self.state_timeout = rospy.Duration(1) # 120任务执行容忍时间
+                self.state_timeout = rospy.Duration(30)
         
         # 等待无人机降落 
         elif self.current_state == MissionState.WAITING_FOR_DRONE:
@@ -186,6 +188,8 @@ class MissionController:
             if self.drone_landed:
                 rospy.loginfo("Drone landed successfully!")
                 self.transition_state(MissionState.MOVING_TO_CHARGE)
+
+            self.state_timeout = rospy.Duration(1)  # 120S 任务执行延迟阈值
         
         # 移动到充电站
         elif self.current_state == MissionState.MOVING_TO_CHARGE:
@@ -211,8 +215,18 @@ class MissionController:
             if not self.move_in_progress:
                 rospy.loginfo("Returning to home position...")
                 # relative_move = self.calculate_relative_move(self.point_nomalize(self.home_point, self.map_shape_orignal, self.map_shape_prefix))
-                self.send_move_command(self.home_point)
+                self.command_queue = [ [2, 0, 0], [2, 0, 0], [2, 0, 0], [1, 0, 0] ]
+                self.current_command_index = 0;
+                self.send_move_command(self.command_queue[ self.current_command_index ])
                 self.state_timeout = rospy.Duration(45)
+
+        elif self.current_state == MissionState.FAILED:
+            rospy.loginfo("Mission Failed!")
+            # 移动小车至原来位置
+            self.command_queue = [[0, 0, -self.current_position[2]], [-self.current_position[0], -self.current_position[1], 0.0]]
+
+            self.send_move_command([self.current_position[0], self.current_position[1], 0.0])
+            self.running = False
     
 
     def point_nomalize(self, point, map_shape_orignal, map_shape_prefix):
@@ -260,9 +274,26 @@ class MissionController:
         else:
             # 如果是其他类型，转换为浮点数列表
             msg.data = [float(x) for x in target]
+
+        self.current_position[0] += msg.data[0]
+        self.current_position[1] += msg.data[1]
+        self.current_position[2] = msg.data[2]
+
         self.move_pub.publish(msg)
         self.move_in_progress = True
         self.move_completed = False
+    
+    def set_speed(self, linear_scale=None, angular_scale=None, default_speed=None):
+        """设置机器人速度参数"""
+        # 发布速度设置消息
+        msg = Float32MultiArray()
+        msg.data = [
+            linear_scale if linear_scale is not None else -1.0,
+            angular_scale if angular_scale is not None else -1.0,
+            default_speed if default_speed is not None else -1.0
+        ]
+        self.set_speed_pub.publish(msg)
+        rospy.loginfo(f"Speed command sent: linear_scale={linear_scale}, angular_scale={angular_scale}, default_speed={default_speed}")
     
     def drone_status_cb(self, msg):
         """无人机状态回调"""
@@ -288,6 +319,8 @@ class MissionController:
         self.command_queue = []
         self.current_command_index = 0
         
+        rospy.loginfo("Move completed, Current position: {}".format(self.current_position))
+
         # 状态转换
         if self.current_state == MissionState.MOVING_TO_POINT1:
             self.transition_state(MissionState.LAUNCHING_DRONE)
