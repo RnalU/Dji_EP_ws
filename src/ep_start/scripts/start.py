@@ -32,21 +32,23 @@ class MissionController:
         charge_point_param = rospy.get_param("~charge_point", "[7.0, 0.0, 0.0]")
         home_point_param = rospy.get_param("~home_point", "[0.0, 0.0, 0.0]")
         
-        # 解析参数为浮点数列表 目标点
+        # 解析参数为浮点数列表
         import ast
         self.point1 = [float(x) for x in ast.literal_eval(point1_param)] if isinstance(point1_param, str) else [float(x) for x in point1_param]
         self.point2 = [float(x) for x in ast.literal_eval(point2_param)] if isinstance(point2_param, str) else [float(x) for x in point2_param]
         self.charge_point = [float(x) for x in ast.literal_eval(charge_point_param)] if isinstance(charge_point_param, str) else [float(x) for x in charge_point_param]
-        self.home_point = [float(x) for x in ast.literal_eval(home_point_param)] if isinstance(home_point_param, str) else [float(x) for x in home_point_param]
+        # HOME点始终为0,0,0
+        self.home_point = [0.0, 0.0, 0.0]
         
-        
-        # 充电时间
         self.charging_time = float(rospy.get_param("~charging_time", 5.0))  # 秒
         
         # 状态跟踪
         self.current_state = MissionState.IDLE
         self.last_state_change = rospy.Time.now()
         self.state_timeout = rospy.Duration(30)  # 默认状态超时时间
+        
+        # 当前位置跟踪
+        self.current_position = [0.0, 0.0, 0.0]
         
         # 发布话题
         self.drone_cmd_pub = rospy.Publisher('/drone/command', Empty, queue_size=1)
@@ -64,7 +66,7 @@ class MissionController:
         self.running = False
         
         rospy.loginfo("Mission Controller Initialized")
-
+        
         # 启动任务
         self.start_mission()
     
@@ -81,6 +83,9 @@ class MissionController:
         self.drone_landed = False
         self.move_completed = False
         self.running = True
+        
+        # 重置当前位置
+        self.current_position = [0.0, 0.0, 0.0]
         
         # 启动状态机线程
         self.state_machine_thread = threading.Thread(target=self._run_state_machine)
@@ -125,14 +130,15 @@ class MissionController:
             return
         
         # 状态处理
-        if self.current_state == MissionState.STARTING: 
+        if self.current_state == MissionState.STARTING:
             rospy.loginfo("Mission starting...")
             self.transition_state(MissionState.MOVING_TO_POINT1)
         
         elif self.current_state == MissionState.MOVING_TO_POINT1:
             if not self.move_in_progress:
                 rospy.loginfo("Moving to Point 1...")
-                self.send_move_command(self.point1)
+                relative_move = self.calculate_relative_move(self.point1)
+                self.send_move_command(relative_move)
                 self.state_timeout = rospy.Duration(30)  # 30秒超时
         
         elif self.current_state == MissionState.LAUNCHING_DRONE:
@@ -144,7 +150,8 @@ class MissionController:
         elif self.current_state == MissionState.MOVING_TO_POINT2:
             if not self.move_in_progress:
                 rospy.loginfo("Moving to Point 2...")
-                self.send_move_command(self.point2)
+                relative_move = self.calculate_relative_move(self.point2)
+                self.send_move_command(relative_move)
                 self.state_timeout = rospy.Duration(30)
         
         elif self.current_state == MissionState.WAITING_FOR_DRONE:
@@ -156,8 +163,8 @@ class MissionController:
         elif self.current_state == MissionState.MOVING_TO_CHARGE:
             if not self.move_in_progress:
                 rospy.loginfo("Moving to charging station...")
-                self.send_move_command(self.charge_point)
-                self.send_move_command([.0, .0, 180])  # 旋转180度
+                relative_move = self.calculate_relative_move(self.charge_point)
+                self.send_move_command(relative_move)
                 self.state_timeout = rospy.Duration(30)
         
         elif self.current_state == MissionState.CHARGING:
@@ -172,9 +179,23 @@ class MissionController:
         elif self.current_state == MissionState.RETURNING_HOME:
             if not self.move_in_progress:
                 rospy.loginfo("Returning to home position...")
-                self.send_move_command(self.home_point)
-                self.send_move_command([.0, .0, 180])  # 旋转90度
+                relative_move = self.calculate_relative_move(self.home_point)
+                self.send_move_command(relative_move)
                 self.state_timeout = rospy.Duration(45)
+    
+    def calculate_relative_move(self, target_position):
+        """计算从当前位置到目标位置的相对移动距离"""
+        relative_move = [
+            target_position[0] - self.current_position[0],
+            target_position[1] - self.current_position[1],
+            target_position[2] - self.current_position[2]
+        ]
+        
+        # 更新当前位置为目标位置
+        self.current_position = target_position[:]
+        
+        rospy.loginfo(f"Moving from {self.current_position} to {target_position}, relative move: {relative_move}")
+        return relative_move
     
     def transition_state(self, new_state):
         """转换到新状态"""
@@ -185,7 +206,6 @@ class MissionController:
         # 重置状态相关变量
         if new_state != MissionState.WAITING_FOR_DRONE:
             self.drone_landed = False
-
         if new_state != MissionState.CHARGING:
             if hasattr(self, 'charge_start_time'):
                 del self.charge_start_time
