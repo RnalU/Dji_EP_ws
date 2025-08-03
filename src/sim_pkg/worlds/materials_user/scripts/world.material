@@ -1,0 +1,154 @@
+material YMC/SignHome
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1.0
+            diffuse 0.8 0.8 0.8 1.0
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture sign_home.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+material YMC/SignCharge
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1.0
+            diffuse 0.8 0.8 0.8 1.0
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture sign_charge.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+
+material YMC/Map
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1.0
+            diffuse 0.8 0.8 0.8 1.0
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture map.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+material YMC/BoxBanana
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1
+            diffuse 0.8 0.8 0.8 1
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture banana.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+material YMC/BoxApple
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1
+            diffuse 0.8 0.8 0.8 1
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture apple.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+material YMC/BoxOrange
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1
+            diffuse 0.8 0.8 0.8 1
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture orange.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+material YMC/BoxWell
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1
+            diffuse 0.8 0.8 0.8 1
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture well.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}

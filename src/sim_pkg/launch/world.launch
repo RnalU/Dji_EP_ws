@@ -1,0 +1,15 @@
+<launch>
+  <!-- 设置Gazebo资源路径，确保能找到纹理文件 -->
+  <env name="GAZEBO_RESOURCE_PATH" value="$(find sim_pkg)/worlds:$(optenv GAZEBO_RESOURCE_PATH)" />
+
+  <!-- 设置使用仿真时间 -->
+  <param name="/use_sim_time" value="true" />
+
+  <!-- 启动Gazebo服务器 -->
+  <node name="gazebo" pkg="gazebo_ros" type="gzserver" respawn="false" output="screen"
+        args="--verbose $(find sim_pkg)/worlds/map.world" />
+
+  <!-- 启动Gazebo客户端（图形界面） -->
+  <node name="gazebo_gui" pkg="gazebo_ros" type="gzclient" respawn="false" output="screen" />
+
+</launch>
