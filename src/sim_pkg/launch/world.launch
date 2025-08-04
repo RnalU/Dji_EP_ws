@@ -7,7 +7,7 @@
 
   <!-- 启动Gazebo服务器 -->
   <node name="gazebo" pkg="gazebo_ros" type="gzserver" respawn="false" output="screen"
-        args="--verbose $(find sim_pkg)/worlds/map.world" />
+        args="--verbose $(find sim_pkg)/worlds/map_2.world" />
 
   <!-- 启动Gazebo客户端（图形界面） -->
   <node name="gazebo_gui" pkg="gazebo_ros" type="gzclient" respawn="false" output="screen" />
