@@ -20,6 +20,52 @@ material YMC/SignHome
     }
 }
 
+material YMC/Sign1
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1.0
+            diffuse 0.8 0.8 0.8 1.0
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture sign_1.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+
+material YMC/Sign2
+{
+    technique
+    {
+        pass
+        {	
+        
+            ambient 0.8 0.8 0.8 1.0
+            diffuse 0.8 0.8 0.8 1.0
+            specular 0.5 0.5 0.5 1.0 20.0
+            emissive 0.3 0.3 0.3 1.0
+            
+            texture_unit
+            {
+                texture sign_2.png
+                filtering anistropic
+                max_anisotropy 16
+            }
+        }
+    }
+}
+
+
 material YMC/SignCharge
 {
     technique
