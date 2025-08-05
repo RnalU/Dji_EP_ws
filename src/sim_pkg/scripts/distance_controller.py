@@ -21,15 +21,16 @@ class DistanceController:
 
         # 控制参数
         self.tolerance_pos = 0.05  # 位置容差 (m)
-        self.tolerance_angle = 2.0  # 角度容差 (度)
-        self.control_rate = 30  # 控制频率 (Hz) - 提高控制频率
+        self.tolerance_angle = 0.5  # 角度容差 (度)
+        self.control_rate = 50  # 控制频率 (Hz) - 提高控制频率
 
         # PID参数
         self.Kp_linear = 2.0
         self.Ki_linear = 0.01
         self.Kd_linear = 0.0
-        self.Kp_angular = 2.0
-        self.Ki_angular = 0.01
+
+        self.Kp_angular = 3.0
+        self.Ki_angular = 0.1
         self.Kd_angular = 0.0
 
         # 积分和微分项
@@ -51,6 +52,8 @@ class DistanceController:
         self.target_x = 0.0
         self.target_y = 0.0
         self.target_theta = 0.0
+        self.final_theta = 0.0
+        self.need_to_reset_theta = False
 
         # 状态标志
         self.is_moving = False
@@ -129,13 +132,18 @@ class DistanceController:
             theta_rad = math.radians(start_theta)
             self.target_x = start_x + dx * math.cos(theta_rad) - dy * math.sin(theta_rad)
             self.target_y = start_y + dx * math.sin(theta_rad) + dy * math.cos(theta_rad)
-            self.target_theta = start_theta + dtheta
+            self.final_theta = start_theta + dtheta
 
             # 标准化目标角度到[-180, 180]
-            self.target_theta = ((self.target_theta + 180) % 360) - 180
+            self.final_theta = ((self.final_theta + 180) % 360) - 180
 
+            # 设定小车临时目标朝向
+            target_heading = math.atan2(dy, dx)
+            current_heading = math.radians(self.current_theta)
+            self.target_theta = target_heading - current_heading
             rospy.loginfo(f"Starting move from ({start_x:.2f}, {start_y:.2f}, {start_theta:.2f}) "
-                          f"to ({self.target_x:.2f}, {self.target_y:.2f}, {self.target_theta:.2f})")
+                          f"to ({self.target_x:.2f}, {self.target_y:.2f}, {self.final_theta:.2f})"
+                          f" with angle {self.target_theta:.2f}°")
 
     def control_loop(self, event):
         """控制循环，由定时器调用"""
@@ -157,11 +165,29 @@ class DistanceController:
             angle_error = ((angle_error + 180) % 360) - 180
 
             # 检查是否已到达目标
-            if distance < self.tolerance_pos and abs(angle_error) < self.tolerance_angle:
+            if distance < self.tolerance_pos and not self.need_to_reset_theta:
+                self.send_zero_velocity()
+                # self.is_moving = False
+                self.need_to_reset_theta = True
+                self.move_completed_pub.publish(Empty())
+                rospy.loginfo("Target reached!"
+                              "Now fix the final orientation.")
+
+                # 设置目标朝向
+                self.target_theta = self.final_theta
+
+                # 重置积分项
+                self.linear_error_integral = 0.0
+                self.angular_error_integral = 0.0
+            
+            # 检查是否已经到达目标朝向
+            if abs(angle_error) < self.tolerance_angle and self.need_to_reset_theta:
+                # 到达目标朝向，停止运动
                 self.send_zero_velocity()
                 self.is_moving = False
-                self.move_completed_pub.publish(Empty())
-                rospy.loginfo("Target reached!")
+                self.need_to_reset_theta = False
+                rospy.loginfo("Final orientation reached. Stopping movement.")
+
                 # 重置积分项
                 self.linear_error_integral = 0.0
                 self.angular_error_integral = 0.0
