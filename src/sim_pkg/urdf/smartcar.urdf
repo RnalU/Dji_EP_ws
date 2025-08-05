@@ -27,7 +27,7 @@
     <link name="base_link">
         <visual>
             <geometry>
-                <box size="0.25 .16 .05" />
+                <box size="0.32 .15 .05" />
             </geometry>
 
             <origin rpy="0 0 1.57075" xyz="0 0 0" />
@@ -38,7 +38,7 @@
         </visual>
         <collision>
             <geometry>
-                <box size="0.25 .16 .05" />
+                <box size="0.32 .15 .05" />
             </geometry>
             <origin rpy="0 0 1.57075" xyz="0 0 0" />
         </collision>
@@ -59,16 +59,16 @@
     <link name="right_front_wheel">
         <visual>
             <geometry>
-                <cylinder length=".02" radius="0.025" />
+                <cylinder length=".04" radius="0.05" />
             </geometry>
 
-            <material name="black">
-                <color rgba="0 0 0 1" />
+            <material name="grey">
+                <color rgba="0.1 0.1 0.1 1" />
             </material>
         </visual>
         <collision>
             <geometry>
-                <cylinder length=".02" radius="0.025" />
+                <cylinder length=".04" radius="0.05" />
             </geometry>
         </collision>
         <inertial>
@@ -89,7 +89,7 @@
         <axis xyz="0 0 1" />
         <parent link="base_link" />
         <child link="right_front_wheel" />
-        <origin rpy="0 1.57075 0.785398" xyz="0.08 0.1 -0.03" />
+        <origin rpy="0 1.57075 0" xyz="0.095 0.11 -0.03" />
         <limit effort="100" velocity="100" />
         <dynamics damping="0.1" friction="0.1" />
     </joint>
@@ -97,10 +97,10 @@
     <link name="right_back_wheel">
     <visual>
         <geometry>
-        <cylinder length=".02" radius="0.025" />
+        <cylinder length=".04" radius="0.05" />
         </geometry>
-        <material name="black">
-        <color rgba="0 0 0 1" />
+        <material name="gray">
+        <color rgba="0.1 0.1 0.1 1" />
         </material>
     </visual>
     <collision>
@@ -126,7 +126,7 @@
         <axis xyz="0 0 1" />
         <parent link="base_link" />
         <child link="right_back_wheel" />
-        <origin rpy="0 1.57075 -0.785398" xyz="0.08 -0.1 -0.03" />
+        <origin rpy="0 1.57075 0" xyz="0.095 -0.11 -0.03" />
         <limit effort="100" velocity="100" />
         <dynamics damping="0.1" friction="0.1" />
     </joint>
@@ -134,15 +134,15 @@
     <link name="left_front_wheel">
         <visual>
             <geometry>
-                <cylinder length=".02" radius="0.025" />
+                <cylinder length=".04" radius="0.05" />
             </geometry>
-            <material name="black">
-                <color rgba="0 0 0 1" />
+            <material name="grey">
+                <color rgba="0.1 0.1 0.1 1" />
             </material>
         </visual>
         <collision>
             <geometry>
-                <cylinder length=".02" radius="0.025" />
+                <cylinder length=".04" radius="0.05" />
             </geometry>
         </collision>
         <inertial>
@@ -163,7 +163,7 @@
         <axis xyz="0 0 1" />
         <parent link="base_link" />
         <child link="left_front_wheel" />
-        <origin rpy="0 1.57075 -0.785398" xyz="-0.08 0.1 -0.03" />
+        <origin rpy="0 1.57075 0" xyz="-0.095 0.11 -0.03" />
         <limit effort="100" velocity="100" />
         <dynamics damping="0.1" friction="0.1" />
     </joint>
@@ -171,15 +171,15 @@
     <link name="left_back_wheel">
         <visual>
             <geometry>
-                <cylinder length=".02" radius="0.025" />
+                <cylinder length=".04" radius="0.05" />
             </geometry>
             <material name="black">
-                <color rgba="0 0 0 1" />
+                <color rgba="0.1 0.1 0.1 1" />
             </material>
         </visual>
         <collision>
             <geometry>
-                <cylinder length=".02" radius="0.025" />
+                <cylinder length=".04" radius="0.05" />
             </geometry>
         </collision>
         <inertial>
@@ -200,7 +200,7 @@
         <axis xyz="0 0 1" />
         <parent link="base_link" />
         <child link="left_back_wheel" />
-        <origin rpy="0 1.57075 0.785398" xyz="-0.08 -0.1 -0.03" />
+        <origin rpy="0 1.57075 0" xyz="-0.095 -0.11 -0.03" />
         <limit effort="100" velocity="100" />
         <dynamics damping="0.1" friction="0.1" />
     </joint>
@@ -242,7 +242,7 @@
     <link name="landing_pad">
         <visual>
             <geometry>
-                <box size="0.25 0.16 0.01" />
+                <box size="0.25 0.30 0.012" />
             </geometry>
             <material name="gray">
                 <color rgba="0.7 0.7 0.7 1" />
@@ -250,7 +250,7 @@
         </visual>
         <collision>
             <geometry>
-                <box size="0.25 0.16 0.01" />
+                <box size="0.25 0.30 0.012" />
             </geometry>
         </collision>
         <inertial>
