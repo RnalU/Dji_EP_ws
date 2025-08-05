@@ -1,0 +1,66 @@
+<launch>
+  <!-- Gazebo -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="worlds/empty.world" />
+    <arg name="paused" value="false" />
+    <arg name="use_sim_time" value="true" />
+    <arg name="gui" value="true" />
+    <arg name="headless" value="false" />
+    <arg name="debug" value="false" />
+  </include>
+
+  <!-- URDF -->
+  <param
+        name="robot_description"
+        textfile="$(find sim_pkg)/urdf/smartcar.urdf"
+    />
+
+  <!-- 生成模型在Gazebo 中 -->
+  <node
+        name="urdf_spawner"
+        pkg="gazebo_ros"
+        type="spawn_model"
+        args="-urdf -model smartcar -param robot_description"
+    />
+  <!-- 加载控制参数 待定-->
+  <!-- <rosparam
+        file="$(find sim_pkg)/config/control_config.yaml"
+        command="load"
+    /> -->
+
+  <!-- 关节状态与机器人状态发布节点 -->
+  <node
+        name="joint_state_publisher"
+        pkg="joint_state_publisher"
+        type="joint_state_publisher"
+    />
+  <node
+        name="robot_state_publisher"
+        pkg="robot_state_publisher"
+        type="robot_state_publisher"
+    />
+
+  <!-- RVIZ -->
+  <node
+        name="rviz"
+        pkg="rviz"
+        type="rviz"
+        args="-d $(find sim_pkg)/rviz/smartcar.rviz"
+    />
+
+  <!-- 控制器 -->
+
+  <!-- <node name="robot_control" pkg="robot_contral" type="key_contral.py" /> 暂时弃用-->
+
+  <node
+        name="distance_controller"
+        pkg="sim_pkg"
+        type="distance_controller.py"
+        output="screen"
+    >
+    <param name="linear_scale" value="0.5" />
+    <param name="angular_scale" value="30.0" />
+    <param name="default_speed" value="0.7" />
+  </node>
+
+</launch>

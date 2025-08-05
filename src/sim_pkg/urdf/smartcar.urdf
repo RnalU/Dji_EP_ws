@@ -1,9 +1,32 @@
 <?xml version="1.0" ?>
 <robot name="smartcar" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <!-- Gazebo plugin for mecanum drive -->
+  <!-- 颜色 -->
+  <gazebo reference="car_head">
+    <material>Gazebo/Red</material>
+  </gazebo>
+  <gazebo reference="landing_pad">
+    <material>Gazebo/White</material>
+  </gazebo>
+  <gazebo reference="base_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
+  <gazebo reference="right_front_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
+  <gazebo reference="right_back_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
+  <gazebo reference="left_front_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
+  <gazebo reference="left_back_wheel">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
   <gazebo>
     <plugin name="mecanum_controller" filename="libgazebo_ros_planar_move.so">
       <commandTopic>cmd_vel</commandTopic>
+      <yDirection>-1</yDirection>
       <odometryTopic>odom</odometryTopic>
       <odometryFrame>odom</odometryFrame>
       <odometryRate>20.0</odometryRate>
@@ -21,7 +44,7 @@
     <joint name="base_footprint_joint" type="fixed">
         <parent link="base_footprint" />
         <child link="base_link" />
-        <origin xyz="0 0 0.082" rpy="0 0 0" />
+        <origin xyz="0 0 0.082" rpy="0 0 -1.57075" />
     </joint>
 
     <link name="base_link">
@@ -105,7 +128,7 @@
     </visual>
     <collision>
         <geometry>
-            <cylinder length=".02" radius="0.025" />
+            <cylinder length=".04" radius="0.05" />
         </geometry>
     </collision>
     <inertial>
