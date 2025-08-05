@@ -16,17 +16,33 @@ class DistanceController:
 
         # 运动参数
         self.linear_scale = rospy.get_param("~linear_scale", 0.5)
-        self.angular_scale = rospy.get_param("~angular_scale", 30.0)
-        self.default_speed = rospy.get_param("~default_speed", 0.7)
+        self.angular_scale = rospy.get_param("~angular_scale", 90.0)
+        self.default_speed = rospy.get_param("~default_speed", 1.0)
 
         # 控制参数
         self.tolerance_pos = 0.05  # 位置容差 (m)
         self.tolerance_angle = 2.0  # 角度容差 (度)
-        self.control_rate = 20  # 控制频率 (Hz)
+        self.control_rate = 30  # 控制频率 (Hz) - 提高控制频率
 
         # PID参数
-        self.Kp_linear = 1.0
-        self.Kp_angular = 1.0
+        self.Kp_linear = 2.0
+        self.Ki_linear = 0.01
+        self.Kd_linear = 0.0
+        self.Kp_angular = 2.0
+        self.Ki_angular = 0.01
+        self.Kd_angular = 0.0
+
+        # 积分和微分项
+        self.linear_error_integral = 0.0
+        self.angular_error_integral = 0.0
+        self.prev_linear_error = 0.0
+        self.prev_angular_error = 0.0
+
+        # 速度平滑参数
+        self.last_linear_vel = 0.0
+        self.last_angular_vel = 0.0
+        self.accel_limit = 0.5  # 线速度加速度限制 (m/s²)
+        self.angular_accel_limit = 1  # 角速度加速度限制 (rad/s²)
 
         # 跟踪参数
         self.current_x = 0.0
@@ -126,6 +142,8 @@ class DistanceController:
         if not self.is_moving:
             return
 
+        dt = 1.0/self.control_rate  # 控制周期时间
+
         with self.lock:
             # 计算误差
             dx = self.target_x - self.current_x
@@ -144,6 +162,9 @@ class DistanceController:
                 self.is_moving = False
                 self.move_completed_pub.publish(Empty())
                 rospy.loginfo("Target reached!")
+                # 重置积分项
+                self.linear_error_integral = 0.0
+                self.angular_error_integral = 0.0
                 return
 
             # 计算机器人当前朝向与目标点连线的夹角
@@ -154,25 +175,73 @@ class DistanceController:
             # 标准化到[-pi, pi]
             heading_error = math.atan2(math.sin(heading_error), math.cos(heading_error))
 
+            # 平滑控制策略 - 使用sigmoid函数实现平滑过渡
+            heading_factor = 1.0 / (1.0 + math.exp(0.5 * abs(math.degrees(heading_error)) - 5))
+
+            # 更新PID控制
+            # 线速度PID
+            self.linear_error_integral += distance * dt
+            linear_error_derivative = (distance - self.prev_linear_error) / dt
+            self.prev_linear_error = distance
+
+            # 角速度PID
+            self.angular_error_integral += heading_error * dt
+            angular_error_derivative = (heading_error - self.prev_angular_error) / dt
+            self.prev_angular_error = heading_error
+
             # 控制命令
             cmd = Twist()
 
-            # 如果方向对准，优先移动到目标位置
+            # 计算目标线速度和角速度
+            target_linear_vel = 0.0
+            target_angular_vel = 0.0
+
             if distance > self.tolerance_pos:
-                if abs(math.degrees(heading_error)) < 10:
-                    # 朝向基本正确，前进
-                    linear_vel = min(self.default_speed, self.Kp_linear * distance)
-                    cmd.linear.x = linear_vel
-                    cmd.angular.z = self.Kp_angular * heading_error  # 同时微调朝向
-                else:
-                    # 先调整朝向
-                    cmd.angular.z = self.Kp_angular * heading_error
+                # 使用平滑因子计算线速度 - 方向误差越大，线速度越小
+                p_term = self.Kp_linear * distance
+                i_term = self.Ki_linear * self.linear_error_integral
+                d_term = self.Kd_linear * linear_error_derivative
+
+                base_linear_vel = min(self.default_speed, p_term + i_term + d_term)
+                target_linear_vel = base_linear_vel * heading_factor
+
+                # 角速度控制 - 始终进行方向修正
+                p_term = self.Kp_angular * heading_error
+                i_term = self.Ki_angular * self.angular_error_integral
+                d_term = self.Kd_angular * angular_error_derivative
+
+                target_angular_vel = p_term + i_term + d_term
             else:
-                # 已到达位置，调整最终朝向
-                cmd.angular.z = math.radians(self.Kp_angular * angle_error / 10.0)
+                # 已到达位置，只调整最终朝向
+                angle_error_rad = math.radians(angle_error)
+                target_angular_vel = self.Kp_angular * angle_error_rad / 5.0
+
+            # 速度平滑处理 - 限制加速度
+            linear_accel = (target_linear_vel - self.last_linear_vel) / dt
+            if abs(linear_accel) > self.accel_limit:
+                linear_accel = math.copysign(self.accel_limit, linear_accel)
+                target_linear_vel = self.last_linear_vel + linear_accel * dt
+
+            angular_accel = (target_angular_vel - self.last_angular_vel) / dt
+            if abs(angular_accel) > self.angular_accel_limit:
+                angular_accel = math.copysign(self.angular_accel_limit, angular_accel)
+                target_angular_vel = self.last_angular_vel + angular_accel * dt
+
+            # 更新速度记录
+            self.last_linear_vel = target_linear_vel
+            self.last_angular_vel = target_angular_vel
+
+            # 设置最终速度命令
+            cmd.linear.x = target_linear_vel
+            cmd.angular.z = target_angular_vel
 
             # 发布速度命令
             self.cmd_vel_pub.publish(cmd)
+
+            # 调试信息
+            if rospy.get_param("~debug", False):
+                rospy.loginfo(f"Distance: {distance:.3f}, Heading error: {math.degrees(heading_error):.2f}°, "
+                              f"Lin vel: {cmd.linear.x:.3f}, Ang vel: {cmd.angular.z:.3f}")
 
     def send_zero_velocity(self):
         """发送零速度命令"""
@@ -188,6 +257,10 @@ class DistanceController:
     def shutdown(self):
         """关闭节点时的清理"""
         rospy.loginfo("Shutting down distance controller...")
+        # 重置控制状态
+        self.is_moving = False
+        self.linear_error_integral = 0.0
+        self.angular_error_integral = 0.0
         self.send_zero_velocity()
         self.control_timer.shutdown()
 

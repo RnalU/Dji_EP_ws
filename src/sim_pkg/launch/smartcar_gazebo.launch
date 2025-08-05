@@ -1,7 +1,21 @@
 <launch>
+  <!-- 设置Gazebo环境变量用于加载自定义材质 -->
+  <env
+        name="GAZEBO_MODEL_PATH"
+        value="$(find sim_pkg)/models:$(optenv GAZEBO_MODEL_PATH)"
+    />
+  <env
+        name="GAZEBO_RESOURCE_PATH"
+        value="$(find sim_pkg)/worlds:$(find sim_pkg)/worlds/materials_user:$(optenv GAZEBO_RESOURCE_PATH)"
+    />
+  <env
+        name="OGRE_RESOURCE_PATH"
+        value="$(find sim_pkg)/worlds/materials_user:$(optenv OGRE_RESOURCE_PATH)"
+    />
+
   <!-- Gazebo -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name" value="worlds/empty.world" />
+    <arg name="world_name" value="$(find sim_pkg)/worlds/map_2.world" />
     <arg name="paused" value="false" />
     <arg name="use_sim_time" value="true" />
     <arg name="gui" value="true" />
@@ -20,7 +34,7 @@
         name="urdf_spawner"
         pkg="gazebo_ros"
         type="spawn_model"
-        args="-urdf -model smartcar -param robot_description"
+        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.1"
     />
   <!-- 加载控制参数 待定-->
   <!-- <rosparam
