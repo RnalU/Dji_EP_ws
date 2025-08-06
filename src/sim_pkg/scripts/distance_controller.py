@@ -6,13 +6,13 @@ import threading
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray, Empty
 from nav_msgs.msg import Odometry
-from tf.transformations import euler_from_quaternion
+from tf.transformations import euler_from_quaternion        
 
 class DistanceController:
     def __init__(self):
         # 初始化ROS节点
         rospy.init_node('distance_controller', log_level=rospy.INFO)
-
+        
         # 运动参数
         self.linear_scale = rospy.get_param("~linear_scale", 0.5)
         self.angular_scale = rospy.get_param("~angular_scale", 90.0)
@@ -23,9 +23,9 @@ class DistanceController:
         self.ki_linear = 0.02
         self.kd_linear = 0.00
         
-        self.kp_angular = 2.5
-        self.ki_angular = 0.01
-        self.kd_angular = 0.10
+        self.kp_angular = 1.5
+        self.ki_angular = 0.08
+        self.kd_angular = 0.0
 
         # 误差积分和前一次误差
         self.linear_error_integral = 0.0
@@ -37,7 +37,7 @@ class DistanceController:
         self.stage = 0  # 控制阶段：0:平移  1:旋转
         self.tolerance_pos = 0.05       # 位置容差 （m）
         self.tolerance_angle = 0.5      # 角度容差 （°）
-        self.control_rate = 20          # 控制频率 (Hz) 
+        self.control_rate = 50          # 控制频率 (Hz) 
 
         # 跟踪参数
         self.current_x = 0.0
@@ -48,7 +48,7 @@ class DistanceController:
         self.target_theta = 0.0
         self.final_theta = 0.0
         self.need_to_reset_theta = False
-
+            
         # 绝对坐标
         self.absolute_x = 0.0
         self.absolute_y = 0.0
@@ -57,6 +57,7 @@ class DistanceController:
         # 状态标志
         self.is_moving = False
         self.lock = threading.Lock()
+        self.go_home = False
 
         # 创建发布者
         self.cmd_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
@@ -150,32 +151,32 @@ class DistanceController:
 
     def move_to_home(self, event=None):
         """根据绝对坐标记录的值回到原点"""
-        with self.lock:
-            if self.is_moving:
-                rospy.logwarn("Robot is already moving!")
-                return
+        if self.is_moving:
+            rospy.logwarn("Robot is already moving!")
+            return
+        self.go_home = True
+        self.stage = 1
+        # 计算回到原点(1,2.3,0)所需的移动距离和角度
+        dx = 1-self.absolute_x
+        dy = 2.3-self.absolute_y
+        dtheta = 0-self.absolute_theta
 
-            # 计算回到原点(1,2.3,0)所需的移动距离和角度
-            dx = 1-self.absolute_x
-            dy = 2.3-self.absolute_y
-            dtheta = 0-self.absolute_theta
+        # 创建移动指令 
+        move_cmd = Float32MultiArray()
+        move_cmd.data = [dx, dy, dtheta]
 
-            # 创建移动指令 
-            move_cmd = Float32MultiArray()
-            move_cmd.data = [dx, dy, dtheta]
+        rospy.loginfo(f"Moving back to home point (1, 2.3, 0) from current position "
+                        f"({dx:.2f}, {dy:.2f}, {dtheta:.2f})")
 
-            rospy.loginfo(f"Moving back to home point (1, 2.3, 0) from current position "
-                         f"({dx:.2f}, {dy:.2f}, {dtheta:.2f})")
-
-            # 发布移动指令
-            self.move_distance_cb(move_cmd)
+        # 发布移动指令
+        self.move_distance_cb(move_cmd)
 
     def control_loop(self, event):
         """控制循环，由定时器调用"""
         with self.lock:
             if not self.is_moving:
                 return
-
+            
             # 计算到目标的距离和角度
             dx = self.target_x - self.current_x
             dy = self.target_y - self.current_y
@@ -236,7 +237,7 @@ class DistanceController:
                 # 标准化到[-180, 180]
                 angle_error = ((angle_error + 180) % 360) - 180
                 
-                # rospy.loginfo(f"Stage: Rotate - Error: {angle_error:.2f}°, Target: {self.final_theta:.2f}°")
+                rospy.loginfo(f"Stage: Rotate - Error: {angle_error:.2f}°, Target: {self.final_theta:.2f}°")
                 
                 if abs(angle_error) > self.tolerance_angle:
                     # PID控制角速度
@@ -245,7 +246,7 @@ class DistanceController:
                     self.prev_angular_error = angle_error
                     
                     # 限制积分项大小防止积分饱和
-                    max_integral = 10.0
+                    max_integral = 20.0
                     self.angular_error_integral = max(-max_integral, min(max_integral, self.angular_error_integral))
                     
                     angular_output = (self.kp_angular * angle_error + 
@@ -253,20 +254,24 @@ class DistanceController:
                                      self.kd_angular * angular_derivative)
                     
                     # 限制最大角速度
-                    max_angular_speed = self.angular_scale * (math.pi/180.0)
-                    cmd.angular.z = max(-max_angular_speed, min(max_angular_speed, angular_output * (math.pi/180.0)))
+                    cmd.angular.z = max(-self.angular_scale, min(self.angular_scale, angular_output))
                 else:
-                    # 运动完成
-                    rospy.loginfo("Movement completed successfully!")
-                    self.is_moving = False
-                    self.send_zero_velocity()
-                    self.move_completed_pub.publish(Empty())
-                    self.stage = 0
-                    self.linear_error_integral = 0.0
-                    self.angular_error_integral = 0.0
-                    self.prev_linear_error = 0.0
-                    self.prev_angular_error = 0.0
-                    return
+                    if self.go_home:
+                        self.go_home = False
+                        self.stage = 0
+                        return
+                    else:
+                        # 运动完成
+                        rospy.loginfo("Movement completed successfully!")
+                        self.is_moving = False
+                        self.send_zero_velocity()
+                        self.move_completed_pub.publish(Empty())
+                        self.stage = 0
+                        self.linear_error_integral = 0.0
+                        self.angular_error_integral = 0.0
+                        self.prev_linear_error = 0.0
+                        self.prev_angular_error = 0.0
+                        return
             
             # 发布速度命令
             self.cmd_vel_pub.publish(cmd)

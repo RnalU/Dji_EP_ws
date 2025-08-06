@@ -61,7 +61,7 @@ class MissionController:
         # 状态跟踪
         self.current_state = MissionState.IDLE
         self.last_state_change = rospy.Time.now()
-        self.state_timeout = rospy.Duration(30)  # 默认状态超时时间
+        self.state_timeout = rospy.Duration(60)  # 默认状态超时时间
 
         # 当前位置跟踪
         self.current_position = [0.0, 0.0, 0.0]
