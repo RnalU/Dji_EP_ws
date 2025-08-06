@@ -17,32 +17,27 @@ class DistanceController:
         self.linear_scale = rospy.get_param("~linear_scale", 0.5)
         self.angular_scale = rospy.get_param("~angular_scale", 90.0)
         self.default_speed = rospy.get_param("~default_speed", 0.7)
+        
+        # PID控制参数
+        self.kp_linear = 2.0 
+        self.ki_linear = 0.02
+        self.kd_linear = 0.00
+        
+        self.kp_angular = 2.5
+        self.ki_angular = 0.01
+        self.kd_angular = 0.10
 
-        # 控制参数
-        self.tolerance_pos = 0.05  # 位置容差 (m)
-        self.tolerance_angle = 0.5  # 角度容差 (度)
-        self.control_rate = 50  # 控制频率 (Hz) - 提高控制频率
-
-        # PID参数
-        self.Kp_linear = 1.0
-        self.Ki_linear = 0.01
-        self.Kd_linear = 0.0
-
-        self.Kp_angular = 1.5         
-        self.Ki_angular = 0.01      
-        self.Kd_angular = 0.0      
-
-        # 积分和微分项
+        # 误差积分和前一次误差
         self.linear_error_integral = 0.0
         self.angular_error_integral = 0.0
         self.prev_linear_error = 0.0
         self.prev_angular_error = 0.0
 
-        # 速度平滑参数
-        self.last_linear_vel = 0.0
-        self.last_angular_vel = 0.0
-        self.accel_limit = 0.5  # 线速度加速度限制 (m/s²)
-        self.angular_accel_limit = 2  # 角速度加速度限制 (rad/s²)
+        # 其他控制参数
+        self.stage = 0  # 控制阶段：0:平移  1:旋转
+        self.tolerance_pos = 0.05       # 位置容差 （m）
+        self.tolerance_angle = 0.5      # 角度容差 （°）
+        self.control_rate = 20          # 控制频率 (Hz) 
 
         # 跟踪参数
         self.current_x = 0.0
@@ -77,7 +72,7 @@ class DistanceController:
         self.control_timer = rospy.Timer(rospy.Duration(0, int(1000000000.0/float(self.control_rate))), self.control_loop)
 
         rospy.loginfo("Distance Controller Initialized")
-
+ 
     def odom_cb(self, msg):
         """里程计回调函数"""
         position = msg.pose.pose.position
@@ -122,6 +117,8 @@ class DistanceController:
         if len(msg.data) < 3:
             rospy.logwarn("Invalid move_distance command!")
             return
+        else:
+            rospy.loginfo(f"Received move_distance command: {msg.data}")
 
         with self.lock:
             if self.is_moving:
@@ -148,20 +145,11 @@ class DistanceController:
             # 标准化目标角度到[-180, 180]
             self.final_theta = ((self.final_theta + 180) % 360) - 180
 
-            # 设定小车临时目标朝向
-            target_heading = math.atan2(dy, dx) * 57.3
-            current_heading = math.radians(self.current_theta) * 57.3
-            self.target_theta = (target_heading - current_heading)
-            rospy.loginfo("target_heading: {}, current_heading: {}, target_theta: {}".format(target_heading, current_heading, self.target_theta))
-
-            self.target_theta = ((self.target_theta + 180) % 360) - 180
-
             rospy.loginfo(f"Starting move from ({start_x:.2f}, {start_y:.2f}, {start_theta:.2f}) "
-                          f"to ({self.target_x:.2f}, {self.target_y:.2f}, {self.final_theta:.2f})"
-                          f" with angle {self.target_theta:.2f}°")
+                          f"to ({self.target_x:.2f}, {self.target_y:.2f}, {self.final_theta:.2f})")
 
     def move_to_home(self, event=None):
-        """根据绝对坐标记录的值回到原点，无速度上限要求"""
+        """根据绝对坐标记录的值回到原点"""
         with self.lock:
             if self.is_moving:
                 rospy.logwarn("Robot is already moving!")
@@ -172,7 +160,7 @@ class DistanceController:
             dy = 2.3-self.absolute_y
             dtheta = 0-self.absolute_theta
 
-            # 创建移动指令 - 格式与move_distance_cb期望的一致
+            # 创建移动指令 
             move_cmd = Float32MultiArray()
             move_cmd.data = [dx, dy, dtheta]
 
@@ -184,126 +172,104 @@ class DistanceController:
 
     def control_loop(self, event):
         """控制循环，由定时器调用"""
-        if not self.is_moving:
-            return
-
-        dt = 1.0/self.control_rate  # 控制周期时间
-
         with self.lock:
-            # 计算误差
-            dx = self.target_x - self.current_x
-            dy = self.target_y - self.current_y
-
-            # 计算当前位置到目标位置的距离
-            distance = math.sqrt(dx*dx + dy*dy)
-
-            # 计算角度误差 (标准化到[-180, 180])
-            angle_error = self.target_theta - self.current_theta
-            angle_error = ((angle_error + 180) % 360) - 180
-
-            # 检查是否已到达目标
-            if distance < self.tolerance_pos and not self.need_to_reset_theta:
-                self.send_zero_velocity()
-                # self.is_moving = False
-                self.need_to_reset_theta = True
-                rospy.loginfo("Target reached!"
-                              f"Now fix the final orientation. {self.target_theta}->{self.final_theta}")
-
-                # 设置目标朝向
-                self.target_theta = self.final_theta
-
-                # 重新计算角度误差
-                angle_error = self.target_theta - self.current_theta
-                angle_error = ((angle_error + 180) % 360) - 180
-
-            # 检查是否已经到达目标朝向
-            if abs(angle_error) < self.tolerance_angle and self.need_to_reset_theta:
-                # 到达目标朝向，停止运动
-                self.send_zero_velocity()
-                self.is_moving = False
-                self.need_to_reset_theta = False
-                rospy.loginfo("Final orientation reached. Stopping movement.")
-
-                # 重置积分项
-                self.linear_error_integral = 0.0
-                self.angular_error_integral = 0.0
+            if not self.is_moving:
                 return
 
-            # 计算机器人当前朝向与目标点连线的夹角
-            target_heading = math.atan2(dy, dx)
-            current_heading = math.radians(self.current_theta)
-            heading_error = target_heading - current_heading
-
-            # 标准化到[-pi, pi]
-            heading_error = math.atan2(math.sin(heading_error), math.cos(heading_error))
-
-            # 平滑控制策略 - 使用sigmoid函数实现平滑过渡
-            heading_factor = 1.0 / (1.0 + math.exp(0.5 * abs(math.degrees(heading_error)) - 5))
-
-            # 更新PID控制
-            # 线速度PID
-            self.linear_error_integral += distance * dt
-            linear_error_derivative = (distance - self.prev_linear_error) / dt
-            self.prev_linear_error = distance
-
-            # 角速度PID
-            self.angular_error_integral += heading_error * dt
-            angular_error_derivative = (heading_error - self.prev_angular_error) / dt
-            self.prev_angular_error = heading_error
-
-            # 控制命令
+            # 计算到目标的距离和角度
+            dx = self.target_x - self.current_x
+            dy = self.target_y - self.current_y
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            # 小车当前朝向 弧度
+            current_theta_rad = math.radians(self.current_theta)
+            
+            # 先平移后旋转
             cmd = Twist()
-
-            # 计算目标线速度和角速度
-            target_linear_vel = 0.0
-            target_angular_vel = 0.0
-
-            if distance > self.tolerance_pos:
-                # 使用平滑因子计算线速度 - 方向误差越大，线速度越小
-                p_term = self.Kp_linear * distance
-                i_term = self.Ki_linear * self.linear_error_integral
-                d_term = self.Kd_linear * linear_error_derivative
-
-                base_linear_vel = min(self.default_speed, p_term + i_term + d_term)
-                target_linear_vel = base_linear_vel * heading_factor
-
-                # 角速度控制 - 始终进行方向修正
-                p_term = self.Kp_angular * heading_error * 2
-                i_term = self.Ki_angular * self.angular_error_integral
-                d_term = self.Kd_angular * angular_error_derivative
-
-                target_angular_vel = p_term + i_term + d_term
-            else:
-                # 已到达位置，只调整最终朝向
-                angle_error_rad = math.radians(angle_error)
-                target_angular_vel = self.Kp_angular * angle_error_rad * 2
-
-            # 速度平滑处理 - 限制加速度
-            linear_accel = (target_linear_vel - self.last_linear_vel) / dt
-            if abs(linear_accel) > self.accel_limit:
-                linear_accel = math.copysign(self.accel_limit, linear_accel)
-                target_linear_vel = self.last_linear_vel + linear_accel * dt
-
-            angular_accel = (target_angular_vel - self.last_angular_vel) / dt
-            if abs(angular_accel) > self.angular_accel_limit:
-                angular_accel = math.copysign(self.angular_accel_limit, angular_accel)
-                target_angular_vel = self.last_angular_vel + angular_accel * dt
-
-            # 更新速度记录
-            self.last_linear_vel = target_linear_vel
-            self.last_angular_vel = target_angular_vel
-
-            # 设置最终速度命令
-            cmd.linear.x = target_linear_vel
-            cmd.angular.z = target_angular_vel
-
+            
+            #  直接平移到目标位置
+            if self.stage == 0:
+                if distance > self.tolerance_pos:
+                    # 计算全局坐标系中的方向向量
+                    direction_x = dx / distance if distance > 0 else 0
+                    direction_y = dy / distance if distance > 0 else 0
+                    
+                    # 将全局坐标系的方向向量转换到机器人坐标系
+                    robot_dir_x = direction_x * math.cos(-current_theta_rad) - direction_y * math.sin(-current_theta_rad)
+                    robot_dir_y = direction_x * math.sin(-current_theta_rad) + direction_y * math.cos(-current_theta_rad)
+                    
+                    # PID控制线速度
+                    self.linear_error_integral += distance
+                    linear_derivative = distance - self.prev_linear_error
+                    self.prev_linear_error = distance
+                    
+                    # 限制积分项大小防止积分饱和
+                    max_integral = 1.0
+                    self.linear_error_integral = max(-max_integral, min(max_integral, self.linear_error_integral))
+                    
+                    speed_scale = self.kp_linear * distance + self.ki_linear * self.linear_error_integral + self.kd_linear * linear_derivative
+                    
+                    # 根据距离目标点的远近调整速度，近处减速
+                    speed = min(self.default_speed, speed_scale)
+                    
+                    # 确保至少有最小速度
+                    min_speed = 0.05
+                    speed = max(min_speed, speed)
+                    
+                    # 设置线速度分量
+                    cmd.linear.x = speed * robot_dir_x * self.linear_scale
+                    cmd.linear.y = speed * robot_dir_y * self.linear_scale
+                    
+                    # rospy.loginfo(f"Stage: Translate - Distance: {distance:.2f}m, Speed: {speed:.2f}m/s, " +
+                    #               f"Vector: ({cmd.linear.x:.2f}, {cmd.linear.y:.2f})")
+                else:
+                    # 位置调整完成，进入旋转调整阶段
+                    self.stage = 1
+                    self.linear_error_integral = 0
+                    self.prev_linear_error = 0
+                    rospy.loginfo("Reached target position. Switching to rotation stage")
+            
+            # 调整到最终朝向
+            elif self.stage == 1:
+                # 计算最终朝向与当前朝向的角度差
+                angle_error = self.final_theta - self.current_theta
+                # 标准化到[-180, 180]
+                angle_error = ((angle_error + 180) % 360) - 180
+                
+                # rospy.loginfo(f"Stage: Rotate - Error: {angle_error:.2f}°, Target: {self.final_theta:.2f}°")
+                
+                if abs(angle_error) > self.tolerance_angle:
+                    # PID控制角速度
+                    self.angular_error_integral += angle_error
+                    angular_derivative = angle_error - self.prev_angular_error
+                    self.prev_angular_error = angle_error
+                    
+                    # 限制积分项大小防止积分饱和
+                    max_integral = 10.0
+                    self.angular_error_integral = max(-max_integral, min(max_integral, self.angular_error_integral))
+                    
+                    angular_output = (self.kp_angular * angle_error + 
+                                     self.ki_angular * self.angular_error_integral + 
+                                     self.kd_angular * angular_derivative)
+                    
+                    # 限制最大角速度
+                    max_angular_speed = self.angular_scale * (math.pi/180.0)
+                    cmd.angular.z = max(-max_angular_speed, min(max_angular_speed, angular_output * (math.pi/180.0)))
+                else:
+                    # 运动完成
+                    rospy.loginfo("Movement completed successfully!")
+                    self.is_moving = False
+                    self.send_zero_velocity()
+                    self.move_completed_pub.publish(Empty())
+                    self.stage = 0
+                    self.linear_error_integral = 0.0
+                    self.angular_error_integral = 0.0
+                    self.prev_linear_error = 0.0
+                    self.prev_angular_error = 0.0
+                    return
+            
             # 发布速度命令
             self.cmd_vel_pub.publish(cmd)
-
-            # 调试信息
-            if rospy.get_param("~debug", False):
-                rospy.loginfo(f"Distance: {distance:.3f}, Heading error: {math.degrees(heading_error):.2f}°, "
-                              f"Lin vel: {cmd.linear.x:.3f}, Ang vel: {cmd.angular.z:.3f}")
 
     def send_zero_velocity(self):
         """发送零速度命令"""
@@ -323,6 +289,10 @@ class DistanceController:
         self.is_moving = False
         self.linear_error_integral = 0.0
         self.angular_error_integral = 0.0
+        self.prev_linear_error = 0.0
+        self.prev_angular_error = 0.0
+        if hasattr(self, 'stage'):
+            del self.stage
         self.send_zero_velocity()
         self.control_timer.shutdown()
 
