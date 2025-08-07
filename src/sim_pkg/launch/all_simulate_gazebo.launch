@@ -23,6 +23,38 @@
     <arg name="debug" value="false" />
   </include>
 
+  <!-- 无人机参数配置及启动 -->
+  <arg name="vehicle" default="p230"/>
+    <!--无人机编号-->
+    <arg name="uav1_id" default="1"/>
+	<!-- 无人机初始位置 - 在小车停机坪上方 -->
+	<arg name="uav1_init_x" default="1.0"/>
+    <arg name="uav1_init_y" default="2.3"/>
+    <arg name="uav1_init_yaw" default="0.0"/>
+	<!-- 1号无人机 -->
+	<include file="$(find sim_pkg)/launch/sitl_px4_indoor.launch">
+		<arg name="uav_id" value="$(arg uav1_id)"/>
+		<arg name="vehicle" value="$(arg vehicle)"/>
+		<arg name="uav_init_x" value="$(arg uav1_init_x)"/>
+		<arg name="uav_init_y" value="$(arg uav1_init_y)"/>
+		<arg name="uav_init_z" value="0.35"/>
+		<arg name="uav_init_yaw" value="$(arg uav1_init_yaw)"/>
+	</include>
+
+  <!-- 地面真值位置转换器 - 解决高度估计问题 -->
+  <node name="ground_truth_to_vision" pkg="sim_pkg" type="ground_truth_to_vision.py" output="screen">
+    <param name="model_name" value="p230_0"/>
+    <param name="publish_rate" value="50.0"/>
+    <param name="frame_id" value="map"/>
+    <param name="child_frame_id" value="base_link"/>
+    <remap from="~vision_pose" to="/uav1/mavros/vision_pose/pose"/>
+    <remap from="~vision_odom" to="/uav1/mavros/odometry/in"/>
+  </node>
+
+  <!-- 静态TF发布器 - 建立坐标系关系 -->
+  <node name="map_to_odom_tf" pkg="tf2_ros" type="static_transform_publisher" args="0 0 0 0 0 0 map odom"/>
+
+
   <!-- URDF -->
   <param
         name="robot_description"
@@ -34,7 +66,7 @@
         name="urdf_spawner"
         pkg="gazebo_ros"
         type="spawn_model"
-        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.1"
+        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.05"
     />
   <!-- 加载控制参数 待定-->
   <!-- <rosparam
