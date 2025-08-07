@@ -1,0 +1,7 @@
+<launch>
+    <!-- 下发飞控消息（已删除，功能在fcProxy实现） -->
+    <!-- <node pkg="tta_m3e_rtsp" type="uavdata" name="uavdata"/> -->
+
+    <!-- 飞行器控制函数 -->
+    <node pkg="tta_m3e_rtsp" type="fcProxy" name="fcProxy" output="screen"/>
+</launch>
