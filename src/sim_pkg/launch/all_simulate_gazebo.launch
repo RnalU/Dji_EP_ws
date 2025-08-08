@@ -29,8 +29,9 @@
     <group if="$(arg gazebo_enable)">
         <include file="$(find gazebo_ros)/launch/empty_world.launch">
             <arg name="world_name" value="$(arg world)" />
-			<!-- 室内定位gazebo需要为true -->
-			<arg name="use_sim_time" value="true" />
+			      <arg name="paused" value="true" />
+            <arg name="gui" value="true" />
+			      <arg name="use_sim_time" value="true" />
         </include>
     </group>
 
@@ -49,7 +50,7 @@
 		<arg name="vehicle" value="$(arg vehicle)" />
 		<arg name="uav_init_x" value="$(arg uav1_init_x)" />
 		<arg name="uav_init_y" value="$(arg uav1_init_y)" />
-		<arg name="uav_init_z" value="0.152" />
+		<arg name="uav_init_z" value="0.165" />
 		<arg name="uav_init_yaw" value="$(arg uav1_init_yaw)" />
 	</include>
 
@@ -64,7 +65,7 @@
         name="urdf_spawner"
         pkg="gazebo_ros"
         type="spawn_model"
-        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.00"
+        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.01"
     />
   <!-- 加载控制参数 待定-->
   <!-- <rosparam
@@ -73,7 +74,7 @@
     /> -->
 
   <!-- 关节状态与机器人状态发布节点 -->
-  <!-- <node
+   <node
         name="joint_state_publisher"
         pkg="joint_state_publisher"
         type="joint_state_publisher"
