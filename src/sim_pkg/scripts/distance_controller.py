@@ -8,6 +8,8 @@ from std_msgs.msg import Float32MultiArray, Empty
 from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion        
 
+from gazebo_ros_link_attacher.srv import Attach, AttachRequest
+
 class DistanceController:
     def __init__(self):
         # 初始化ROS节点
@@ -15,7 +17,7 @@ class DistanceController:
         
         # 运动参数
         self.linear_scale = rospy.get_param("~linear_scale", 0.5)
-        self.angular_scale = rospy.get_param("~angular_scale", 90.0)
+        self.angular_scale = rospy.get_param("~angular_scale", 30.0)
         self.default_speed = rospy.get_param("~default_speed", 0.7)
         
         # PID控制参数
@@ -23,8 +25,8 @@ class DistanceController:
         self.ki_linear = 0.02
         self.kd_linear = 0.00
         
-        self.kp_angular = 1.5
-        self.ki_angular = 0.08
+        self.kp_angular = 0.4
+        self.ki_angular = 0.01
         self.kd_angular = 0.0
 
         # 误差积分和前一次误差
@@ -71,8 +73,9 @@ class DistanceController:
 
         # 定时控制循环
         self.control_timer = rospy.Timer(rospy.Duration(0, int(1000000000.0/float(self.control_rate))), self.control_loop)
-
+        
         rospy.loginfo("Distance Controller Initialized")
+
  
     def odom_cb(self, msg):
         """里程计回调函数"""
