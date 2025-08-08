@@ -13,47 +13,45 @@
         value="$(find sim_pkg)/worlds/materials_user:$(optenv OGRE_RESOURCE_PATH)"
     />
 
-  <!-- Gazebo -->
+  <!-- Gazebo
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name" value="$(find sim_pkg)/worlds/map_2.world" />
-    <arg name="paused" value="false" />
     <arg name="use_sim_time" value="true" />
     <arg name="gui" value="true" />
     <arg name="headless" value="false" />
     <arg name="debug" value="false" />
-  </include>
+  </include> -->
+
+  <!-- Gazebo configs -->
+    <arg name="gazebo_enable" default="true" />
+	<arg name="world" default="$(find sim_pkg)/worlds/map_2.world" />
+    <!-- 启动Gazebo -->
+    <group if="$(arg gazebo_enable)">
+        <include file="$(find gazebo_ros)/launch/empty_world.launch">
+            <arg name="world_name" value="$(arg world)" />
+			<!-- 室内定位gazebo需要为true -->
+			<arg name="use_sim_time" value="true" />
+        </include>
+    </group>
 
   <!-- 无人机参数配置及启动 -->
-  <arg name="vehicle" default="p230"/>
+  <arg name="vehicle" default="p230" />
+  <arg name="d435i_enable" default="false" />
     <!--无人机编号-->
-    <arg name="uav1_id" default="1"/>
+    <arg name="uav1_id" default="1" />
 	<!-- 无人机初始位置 - 在小车停机坪上方 -->
-	<arg name="uav1_init_x" default="1.0"/>
-    <arg name="uav1_init_y" default="2.3"/>
-    <arg name="uav1_init_yaw" default="0.0"/>
+	<arg name="uav1_init_x" default="1.0" />
+    <arg name="uav1_init_y" default="2.3" />
+    <arg name="uav1_init_yaw" default="0.0" />
 	<!-- 1号无人机 -->
 	<include file="$(find sim_pkg)/launch/sitl_px4_indoor.launch">
-		<arg name="uav_id" value="$(arg uav1_id)"/>
-		<arg name="vehicle" value="$(arg vehicle)"/>
-		<arg name="uav_init_x" value="$(arg uav1_init_x)"/>
-		<arg name="uav_init_y" value="$(arg uav1_init_y)"/>
-		<arg name="uav_init_z" value="0.35"/>
-		<arg name="uav_init_yaw" value="$(arg uav1_init_yaw)"/>
+		<arg name="uav_id" value="$(arg uav1_id)" />
+		<arg name="vehicle" value="$(arg vehicle)" />
+		<arg name="uav_init_x" value="$(arg uav1_init_x)" />
+		<arg name="uav_init_y" value="$(arg uav1_init_y)" />
+		<arg name="uav_init_z" value="0.152" />
+		<arg name="uav_init_yaw" value="$(arg uav1_init_yaw)" />
 	</include>
-
-  <!-- 地面真值位置转换器 - 解决高度估计问题 -->
-  <node name="ground_truth_to_vision" pkg="sim_pkg" type="ground_truth_to_vision.py" output="screen">
-    <param name="model_name" value="p230_0"/>
-    <param name="publish_rate" value="50.0"/>
-    <param name="frame_id" value="map"/>
-    <param name="child_frame_id" value="base_link"/>
-    <remap from="~vision_pose" to="/uav1/mavros/vision_pose/pose"/>
-    <remap from="~vision_odom" to="/uav1/mavros/odometry/in"/>
-  </node>
-
-  <!-- 静态TF发布器 - 建立坐标系关系 -->
-  <node name="map_to_odom_tf" pkg="tf2_ros" type="static_transform_publisher" args="0 0 0 0 0 0 map odom"/>
-
 
   <!-- URDF -->
   <param
@@ -66,7 +64,7 @@
         name="urdf_spawner"
         pkg="gazebo_ros"
         type="spawn_model"
-        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.05"
+        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.00"
     />
   <!-- 加载控制参数 待定-->
   <!-- <rosparam
@@ -75,7 +73,7 @@
     /> -->
 
   <!-- 关节状态与机器人状态发布节点 -->
-  <node
+  <!-- <node
         name="joint_state_publisher"
         pkg="joint_state_publisher"
         type="joint_state_publisher"
