@@ -343,15 +343,15 @@
             <surface>
                <friction>
                  <ode>
-                   <mu>1.2</mu>
-                   <mu2>1.0</mu2>
+                   <mu>2.2</mu>
+                   <mu2>2.0</mu2>
                    <slip1>0.0</slip1>
                    <slip2>0.0</slip2>
                  </ode>
                </friction>
                <contact>
                  <ode>
-                   <kp>5e5</kp>
+                   <kp>1e5</kp>
                    <kd>1e3</kd>
                    <max_vel>0.2</max_vel>
                    <min_depth>0.001</min_depth>
