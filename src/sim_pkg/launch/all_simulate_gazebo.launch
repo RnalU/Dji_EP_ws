@@ -115,7 +115,7 @@
   
   <!-- 复位 -->
   <node
-        pkg="ep_start"
+        pkg="sim_pkg"
         type="sim_reset.py"
         name="simulation_reset_helper_light"
         output="screen"
