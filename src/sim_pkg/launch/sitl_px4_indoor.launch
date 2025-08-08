@@ -66,8 +66,8 @@
 			<param name="gcs_url" value="" />
 			<param name="target_system_id" value="$(eval 1 + arg('ID'))"/>
 			<param name="target_component_id" value="1" />
-			<rosparam command="load" file="$(find prometheus_gazebo)/config/mavros_config/px4_config_indoor.yaml" />
-			<rosparam command="load" file="$(find prometheus_gazebo)/config/mavros_config/px4_pluginlists_indoor.yaml" />
+			<rosparam command="load" file="$(find sim_pkg)/config/mavros_config/px4_config_indoor.yaml" />
+			<rosparam command="load" file="$(find sim_pkg)/config/mavros_config/px4_pluginlists_indoor.yaml" />
 		</node>
     </group>
 </launch>
