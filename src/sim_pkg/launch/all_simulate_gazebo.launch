@@ -50,7 +50,7 @@
 		<arg name="vehicle" value="$(arg vehicle)" />
 		<arg name="uav_init_x" value="$(arg uav1_init_x)" />
 		<arg name="uav_init_y" value="$(arg uav1_init_y)" />
-		<arg name="uav_init_z" value="0.165" />
+		<arg name="uav_init_z" value="0.16" />
 		<arg name="uav_init_yaw" value="$(arg uav1_init_yaw)" />
 	</include>
 
