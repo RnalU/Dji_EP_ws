@@ -1,0 +1,111 @@
+<launch>
+  <!-- 设置Gazebo环境变量用于加载自定义材质 -->
+  <env
+        name="GAZEBO_MODEL_PATH"
+        value="$(find sim_pkg)/models:$(optenv GAZEBO_MODEL_PATH)"
+    />
+  <env
+        name="GAZEBO_RESOURCE_PATH"
+        value="$(find sim_pkg)/worlds:$(find sim_pkg)/worlds/materials_user:$(optenv GAZEBO_RESOURCE_PATH)"
+    />
+  <env
+        name="OGRE_RESOURCE_PATH"
+        value="$(find sim_pkg)/worlds/materials_user:$(optenv OGRE_RESOURCE_PATH)"
+    />
+
+  <!-- Gazebo
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find sim_pkg)/worlds/map_2.world" />
+    <arg name="use_sim_time" value="true" />
+    <arg name="gui" value="true" />
+    <arg name="headless" value="false" />
+    <arg name="debug" value="false" />
+  </include> -->
+
+  <!-- Gazebo configs -->
+    <arg name="gazebo_enable" default="true" />
+	<arg name="world" default="$(find sim_pkg)/worlds/map_2.world" />
+    <!-- 启动Gazebo -->
+    <group if="$(arg gazebo_enable)">
+        <include file="$(find gazebo_ros)/launch/empty_world.launch">
+            <arg name="world_name" value="$(arg world)" />
+			      <arg name="paused" value="true" />
+            <arg name="gui" value="true" />
+			      <arg name="use_sim_time" value="true" />
+        </include>
+    </group>
+
+  <!-- 无人机参数配置及启动 -->
+  <arg name="vehicle" default="p230" />
+  <arg name="d435i_enable" default="false" />
+    <!--无人机编号-->
+    <arg name="uav1_id" default="1" />
+	<!-- 无人机初始位置 - 在小车停机坪上方 -->
+	<arg name="uav1_init_x" default="1.0" />
+    <arg name="uav1_init_y" default="2.3" />
+    <arg name="uav1_init_yaw" default="0.0" />
+	<!-- 1号无人机 -->
+	<include file="$(find sim_pkg)/launch/sitl_px4_indoor.launch">
+		<arg name="uav_id" value="$(arg uav1_id)" />
+		<arg name="vehicle" value="$(arg vehicle)" />
+		<arg name="uav_init_x" value="$(arg uav1_init_x)" />
+		<arg name="uav_init_y" value="$(arg uav1_init_y)" />
+		<arg name="uav_init_z" value="0.16" />
+		<arg name="uav_init_yaw" value="$(arg uav1_init_yaw)" />
+	</include>
+
+  <!-- URDF -->
+  <param
+        name="robot_description"
+        textfile="$(find sim_pkg)/urdf/smartcar.urdf"
+    />
+
+  <!-- 生成模型在Gazebo 中 -->
+  <node
+        name="urdf_spawner"
+        pkg="gazebo_ros"
+        type="spawn_model"
+        args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.01"
+    />
+  <!-- 加载控制参数 待定-->
+  <!-- <rosparam
+        file="$(find sim_pkg)/config/control_config.yaml"
+        command="load"
+    /> -->
+
+  <!-- 关节状态与机器人状态发布节点 -->
+   <node
+        name="joint_state_publisher"
+        pkg="joint_state_publisher"
+        type="joint_state_publisher"
+    />
+  <node
+        name="robot_state_publisher"
+        pkg="robot_state_publisher"
+        type="robot_state_publisher"
+    />
+
+  <!-- RVIZ -->
+  <node
+        name="rviz"
+        pkg="rviz"
+        type="rviz"
+        args="-d $(find sim_pkg)/rviz/smartcar.rviz"
+    />
+
+  <!-- 控制器 -->
+
+  <!-- <node name="robot_control" pkg="robot_contral" type="key_contral.py" /> 暂时弃用-->
+
+  <node
+        name="distance_controller"
+        pkg="sim_pkg"
+        type="distance_controller.py"
+        output="screen"
+    >
+    <param name="linear_scale" value="0.5" />
+    <param name="angular_scale" value="30.0" />
+    <param name="default_speed" value="0.7" />
+  </node>
+
+</launch>

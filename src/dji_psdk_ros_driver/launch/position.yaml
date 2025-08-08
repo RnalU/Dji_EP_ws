@@ -1,0 +1,22 @@
+# 文件采用的均为地图的理想值，但目前公司的场地并不满足此值，需要调整（比赛期间可以用米尺测量一下，略微修改一下数据）
+
+# 货架一：顶部数据
+shelf_one_apple: [-0.75, 0.8, 2.5]
+shelf_one_banana: [0.75, 0.8, 2.5]
+shelf_one_watermelon: [2.0, 0.8, 2.5]
+shelf_one_orange: [3.0, 0.8, 2.5]
+
+# I区
+area_one: [0.0, 0.0, 0.3]
+
+# 货架二： 顶部数据
+shelf_two_apple: [-0.75, -2.6, 2.5]
+shelf_two_banana: [0.75, -2.6, 2.5]
+shelf_two_watermelon: [2.0, -2.6, 2.5]
+shelf_two_orange: [3.0, -2.6, 2.5]
+
+# II区
+area_two: [2.5, -1.8, 0.3]
+
+# 初始yaw角，保证校准，一般为0
+init_yaw: 0.0
