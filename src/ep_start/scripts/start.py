@@ -15,6 +15,7 @@ class MissionState(Enum):
     STARTING = auto()               # 任务开始
     MOVING_TO_POINT1 = auto()       # 移动到点1
     LAUNCHING_DRONE = auto()        # 无人机起飞
+    WAITING_FOR_LAUNCH = auto()    # 等待无人机起飞
     MOVING_TO_POINT2 = auto()       # 移动到点2
     WAITING_FOR_DRONE = auto()      # 等待无人机降落
     MOVING_TO_CHARGE = auto()       # 移动到充电站
@@ -36,9 +37,9 @@ class MissionController:
 
         # 任务参数
         point1_param = rospy.get_param("~point1", "[2.5, -0.9, 0.0]")  # [x:m, y:m, z:°]
-        point2_param = rospy.get_param("~point2", "[2.5, 1.8, 0.0]")
+        point2_param = rospy.get_param("~point2", "[2.7, 1.8, 0.0]")
         charge_point_param = rospy.get_param("~charge_point", "[2.0, -0.9, 0.0]")
-        home_point_param = rospy.get_param("~home_point", "[8.0, 0.0, 0.0]")
+        home_point_param = rospy.get_param("~home_point", "[8.2, 0.0, 0.0]")
 
         # 仿真相关
         self.sim_flag = True
@@ -89,7 +90,7 @@ class MissionController:
         self.current_position = [0.0, 0.0, 0.0]
 
         # 发布话题
-        self.drone_cmd_pub = rospy.Publisher('/drone/command', Empty, queue_size=1)
+        self.drone_cmd_pub = rospy.Publisher('/drone/takeoff', Empty, queue_size=1)
         self.move_pub = rospy.Publisher('/move_distance', Float32MultiArray, queue_size=1)
         self.set_speed_pub = rospy.Publisher('/set_speed', Float32MultiArray, queue_size=1)  # 添加速度设置发布者
 
@@ -99,6 +100,9 @@ class MissionController:
 
         # 无人机状态
         self.drone_landed = False
+        self.drone_takeoff = False
+
+        # 小车状态
         self.move_completed = False
 
         # 状态机运行标志
@@ -190,6 +194,7 @@ class MissionController:
         # 重置状态
         self.current_state = MissionState.STARTING
         self.drone_landed = False
+        self.drone_takeoff = False
         self.move_completed = False
         self.running = True
 
@@ -269,15 +274,25 @@ class MissionController:
 
         # 飞机起飞状态
         elif self.current_state == MissionState.LAUNCHING_DRONE:
+            rospy.sleep(2) # 稍等稳定
             # 起飞前先 detach
             if self.use_attach:
                 rospy.loginfo("Detaching drone before launch...")
                 self.detach_drone()
-                rospy.sleep(1)  # 稍等物理稳定
+                rospy.sleep(2)  # 稍等物理稳定
             rospy.loginfo("Launching drone...")
             self.drone_cmd_pub.publish(Empty())
             rospy.sleep(2)  # 等待命令发送
-            self.transition_state(MissionState.MOVING_TO_POINT2)
+            self.transition_state(MissionState.WAITING_FOR_LAUNCH)
+
+        elif self.current_state == MissionState.WAITING_FOR_LAUNCH:
+            rospy.loginfo("Waiting for drone to launch...")
+            # 等待无人机起飞完成
+            if self.drone_takeoff:
+                rospy.loginfo("Drone launched successfully!")
+                self.transition_state(MissionState.MOVING_TO_POINT2)
+            # 设置状态超时
+            self.state_timeout = rospy.Duration(30)  # 30秒超时
 
         # 移动到点2
         elif self.current_state == MissionState.MOVING_TO_POINT2:
@@ -296,7 +311,7 @@ class MissionController:
                 self.transition_state(MissionState.MOVING_TO_CHARGE)
 
             # Debug
-            self.state_timeout = rospy.Duration(1)  # 120S 任务执行延迟阈值
+            self.state_timeout = rospy.Duration(120)  # 120S 任务执行延迟阈值
 
         # 移动到充电站
         elif self.current_state == MissionState.MOVING_TO_CHARGE:
@@ -402,10 +417,17 @@ class MissionController:
 
     def drone_status_cb(self, msg):
         """无人机状态回调"""
-        self.drone_landed = msg.data
+        self.drone_status = msg.data
 
+        if self.drone_status:
+            rospy.loginfo("Drone is flying.")
+            self.drone_takeoff = True
+        if self.drone_status is False:
+            rospy.loginfo("Drone has landed.")
+            self.drone_landed = True
+        
         # 无人机成功降落后重新 attach（如果在等待降落或刚降落）
-        if self.drone_landed:
+        if self.drone_status is False:
             rospy.loginfo("Drone has landed.")
             if self.use_attach:
                 rospy.loginfo("Re-attaching drone to platform...")
