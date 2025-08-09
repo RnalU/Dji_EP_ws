@@ -37,9 +37,9 @@ class MissionController:
 
         # 任务参数
         point1_param = rospy.get_param("~point1", "[2.5, -0.9, 0.0]")  # [x:m, y:m, z:°]
-        point2_param = rospy.get_param("~point2", "[2.7, 1.8, 0.0]")
+        point2_param = rospy.get_param("~point2", "[2.57, 1.8, 0.0]")
         charge_point_param = rospy.get_param("~charge_point", "[2.0, -0.9, 0.0]")
-        home_point_param = rospy.get_param("~home_point", "[8.2, 0.0, 0.0]")
+        home_point_param = rospy.get_param("~home_point", "[8.0, 0.0, 0.0]")
 
         # 仿真相关
         self.sim_flag = True
@@ -311,7 +311,7 @@ class MissionController:
                 self.transition_state(MissionState.MOVING_TO_CHARGE)
 
             # Debug
-            self.state_timeout = rospy.Duration(120)  # 120S 任务执行延迟阈值
+            self.state_timeout = rospy.Duration(300)  # 300S 任务执行延迟阈值
 
         # 移动到充电站
         elif self.current_state == MissionState.MOVING_TO_CHARGE:
