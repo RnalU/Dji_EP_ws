@@ -12,6 +12,10 @@
         name="OGRE_RESOURCE_PATH"
         value="$(find sim_pkg)/worlds/materials_user:$(optenv OGRE_RESOURCE_PATH)"
     />
+  <env
+        name="GAZEBO_PLUGIN_PATH"
+        value="$(env DJI_EP_WS)/devel/lib:$(optenv GAZEBO_PLUGIN_PATH)"
+    />
 
   <!-- Gazebo
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
@@ -67,6 +71,7 @@
         type="spawn_model"
         args="-urdf -model smartcar -param robot_description -x 1.0 -y 2.3 -z 0.01"
     />
+
   <!-- 加载控制参数 待定-->
   <!-- <rosparam
         file="$(find sim_pkg)/config/control_config.yaml"
@@ -107,5 +112,14 @@
     <param name="angular_scale" value="30.0" />
     <param name="default_speed" value="0.7" />
   </node>
-
+  
+  <!-- 复位 -->
+  <node
+        pkg="sim_pkg"
+        type="sim_reset.py"
+        name="simulation_reset_helper_light"
+        output="screen"
+        args=""
+    />
+  
 </launch>

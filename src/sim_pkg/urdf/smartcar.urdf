@@ -61,20 +61,20 @@
         </visual>
         <collision>
             <geometry>
-                <box size="0.32 0.15 .15" />
+                <box size="0.45 0.30 .15" />
             </geometry>
             <origin rpy="0 0 1.57075" xyz="0 0 0" />
         </collision>
         <inertial>
-            <mass value="2.5" />
+            <mass value="1.2" />
             <origin xyz="0 0 0" rpy="0 0 0" />
             <inertia
-                ixx="0.0208"
+                ixx="0.248"
                 ixy="0"
                 ixz="0"
-                iyy="0.0347"
+                iyy="0.247"
                 iyz="0"
-                izz="0.0427"
+                izz="0.227"
             />
         </inertial>
     </link>
@@ -343,15 +343,15 @@
             <surface>
                <friction>
                  <ode>
-                   <mu>1.2</mu>
-                   <mu2>1.0</mu2>
+                   <mu>2.2</mu>
+                   <mu2>2.0</mu2>
                    <slip1>0.0</slip1>
                    <slip2>0.0</slip2>
                  </ode>
                </friction>
                <contact>
                  <ode>
-                   <kp>5e5</kp>
+                   <kp>1e5</kp>
                    <kd>1e3</kd>
                    <max_vel>0.2</max_vel>
                    <min_depth>0.001</min_depth>
@@ -360,10 +360,10 @@
              </surface>
         </collision>
         <inertial>
-            <mass value="1.5" />
+            <mass value="12.5" />
             <origin xyz="0 0 0" rpy="0 0 0" />
             <inertia
-                ixx="0.0154"
+                ixx="0.0354"
                 ixy="0"
                 ixz="0"
                 iyy="0.0154"

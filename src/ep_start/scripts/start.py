@@ -7,12 +7,15 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32MultiArray, Empty, Bool
 from robomaster import robot, led
 
+from gazebo_ros_link_attacher.srv import Attach, AttachRequest
+
 class MissionState(Enum):
     """任务状态枚举"""
     IDLE = auto()                   # 空闲状态
     STARTING = auto()               # 任务开始
     MOVING_TO_POINT1 = auto()       # 移动到点1
     LAUNCHING_DRONE = auto()        # 无人机起飞
+    WAITING_FOR_LAUNCH = auto()    # 等待无人机起飞
     MOVING_TO_POINT2 = auto()       # 移动到点2
     WAITING_FOR_DRONE = auto()      # 等待无人机降落
     MOVING_TO_CHARGE = auto()       # 移动到充电站
@@ -34,12 +37,32 @@ class MissionController:
 
         # 任务参数
         point1_param = rospy.get_param("~point1", "[2.5, -0.9, 0.0]")  # [x:m, y:m, z:°]
-        point2_param = rospy.get_param("~point2", "[2.5, 1.8, 0.0]")
+        point2_param = rospy.get_param("~point2", "[2.57, 1.8, 0.0]")
         charge_point_param = rospy.get_param("~charge_point", "[2.0, -0.9, 0.0]")
         home_point_param = rospy.get_param("~home_point", "[8.0, 0.0, 0.0]")
 
         # 仿真相关
         self.sim_flag = True
+
+        if self.sim_flag:
+           
+            # link attacher
+            # 是否使用 attach 功能
+            self.use_attach = rospy.get_param("~use_attach", True)
+
+            # 模型/连结名称
+            self.platform_model = rospy.get_param("~platform_model", "smartcar")
+            self.platform_link = rospy.get_param("~platform_link", "base_footprint")
+            self.drone_model = rospy.get_param("~drone_model", "p230_0")
+            self.drone_link = rospy.get_param("~drone_link", "base_link")  # TODO: 确认实际名称
+
+            # service 句柄占位
+            self._attach_srv = None
+            self._detach_srv = None
+
+            # 初始化 service
+            if self.use_attach:
+                self._init_attach_services()
 
         # 解析参数为浮点数列表
         import ast
@@ -67,7 +90,7 @@ class MissionController:
         self.current_position = [0.0, 0.0, 0.0]
 
         # 发布话题
-        self.drone_cmd_pub = rospy.Publisher('/drone/command', Empty, queue_size=1)
+        self.drone_cmd_pub = rospy.Publisher('/drone/takeoff', Empty, queue_size=1)
         self.move_pub = rospy.Publisher('/move_distance', Float32MultiArray, queue_size=1)
         self.set_speed_pub = rospy.Publisher('/set_speed', Float32MultiArray, queue_size=1)  # 添加速度设置发布者
 
@@ -77,6 +100,9 @@ class MissionController:
 
         # 无人机状态
         self.drone_landed = False
+        self.drone_takeoff = False
+
+        # 小车状态
         self.move_completed = False
 
         # 状态机运行标志
@@ -91,6 +117,72 @@ class MissionController:
         # 启动任务
         self.start_mission()
 
+
+    # link attacher 
+    def _init_attach_services(self):
+        """创建 attach/detach 服务"""
+        attach_name = "/link_attacher_node/attach"
+        detach_name = "/link_attacher_node/detach"
+        
+        rospy.loginfo("Waiting for link attacher services...")
+        attach_srv = rospy.ServiceProxy(attach_name, Attach)
+        detach_srv = rospy.ServiceProxy(detach_name, Attach)
+        attach_srv.wait_for_service()
+        rospy.loginfo("Created ServiceProxy to /link_attacher_node/attach")
+        detach_srv.wait_for_service()
+        rospy.loginfo("Created ServiceProxy to /link_attacher_node/detach")
+
+        rospy.wait_for_service(attach_name)
+        rospy.wait_for_service(detach_name)
+        rospy.loginfo("Link attacher services are available.")
+
+        self._attach_srv = rospy.ServiceProxy(attach_name, Attach)
+        self._detach_srv = rospy.ServiceProxy(detach_name, Attach)
+        rospy.loginfo("Attach services ready.")
+
+    def attach_drone(self):
+        """创建固定关节，把无人机锁在平台上"""
+        if not self.use_attach:
+            return
+        if self._attach_srv is None:
+            rospy.logwarn("Attach service not ready.")
+            return
+        req = AttachRequest()
+        req.model_name_1 = self.platform_model
+        req.link_name_1 = self.platform_link
+        req.model_name_2 = self.drone_model
+        req.link_name_2 = self.drone_link
+        try:
+            resp = self._attach_srv(req)
+            if resp.ok:
+                rospy.loginfo(f"Attached {req.model_name_2}/{req.link_name_2} to {req.model_name_1}/{req.link_name_1}")
+            else:
+                rospy.logwarn("Attach service returned ok=False")
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Attach service call failed: {e}")
+
+    def detach_drone(self):
+        """解除固定关节"""
+        if not self.use_attach:
+            return
+        if self._detach_srv is None:
+            rospy.logwarn("Detach service not ready.")
+            return
+        req = AttachRequest()
+        req.model_name_1 = self.platform_model
+        req.link_name_1 = self.platform_link
+        req.model_name_2 = self.drone_model
+        req.link_name_2 = self.drone_link
+        try:
+            resp = self._detach_srv(req)
+            if resp.ok:
+                rospy.loginfo(f"Detached {req.model_name_2} from platform")
+            else:
+                rospy.logwarn("Detach service returned ok=False")
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Detach service call failed: {e}")
+
+
     def start_mission(self):
         """启动任务"""
         if self.current_state != MissionState.IDLE:
@@ -102,6 +194,7 @@ class MissionController:
         # 重置状态
         self.current_state = MissionState.STARTING
         self.drone_landed = False
+        self.drone_takeoff = False
         self.move_completed = False
         self.running = True
 
@@ -164,6 +257,10 @@ class MissionController:
         # 发车
         if self.current_state == MissionState.STARTING:
             rospy.loginfo("Mission starting...")
+            # 确保上车锁定
+            if self.use_attach:
+                self.attach_drone()
+
             self.transition_state(MissionState.MOVING_TO_POINT1)
 
         # 移动到点1
@@ -177,10 +274,25 @@ class MissionController:
 
         # 飞机起飞状态
         elif self.current_state == MissionState.LAUNCHING_DRONE:
+            rospy.sleep(2) # 稍等稳定
+            # 起飞前先 detach
+            if self.use_attach:
+                rospy.loginfo("Detaching drone before launch...")
+                self.detach_drone()
+                rospy.sleep(2)  # 稍等物理稳定
             rospy.loginfo("Launching drone...")
             self.drone_cmd_pub.publish(Empty())
             rospy.sleep(2)  # 等待命令发送
-            self.transition_state(MissionState.MOVING_TO_POINT2)
+            self.transition_state(MissionState.WAITING_FOR_LAUNCH)
+
+        elif self.current_state == MissionState.WAITING_FOR_LAUNCH:
+            rospy.loginfo("Waiting for drone to launch...")
+            # 等待无人机起飞完成
+            if self.drone_takeoff:
+                rospy.loginfo("Drone launched successfully!")
+                self.transition_state(MissionState.MOVING_TO_POINT2)
+            # 设置状态超时
+            self.state_timeout = rospy.Duration(30)  # 30秒超时
 
         # 移动到点2
         elif self.current_state == MissionState.MOVING_TO_POINT2:
@@ -199,7 +311,7 @@ class MissionController:
                 self.transition_state(MissionState.MOVING_TO_CHARGE)
 
             # Debug
-            self.state_timeout = rospy.Duration(1)  # 120S 任务执行延迟阈值
+            self.state_timeout = rospy.Duration(300)  # 300S 任务执行延迟阈值
 
         # 移动到充电站
         elif self.current_state == MissionState.MOVING_TO_CHARGE:
@@ -305,8 +417,21 @@ class MissionController:
 
     def drone_status_cb(self, msg):
         """无人机状态回调"""
-        self.drone_landed = msg.data
+        self.drone_status = msg.data
 
+        if self.drone_status:
+            rospy.loginfo("Drone is flying.")
+            self.drone_takeoff = True
+        if self.drone_status is False:
+            rospy.loginfo("Drone has landed.")
+            self.drone_landed = True
+        
+        # 无人机成功降落后重新 attach（如果在等待降落或刚降落）
+        if self.drone_status is False:
+            rospy.loginfo("Drone has landed.")
+            if self.use_attach:
+                rospy.loginfo("Re-attaching drone to platform...")
+                self.attach_drone()
         # 如果正在等待无人机降落并且无人机已着陆
         if self.current_state == MissionState.WAITING_FOR_DRONE and self.drone_landed:
             self.transition_state(MissionState.MOVING_TO_CHARGE)

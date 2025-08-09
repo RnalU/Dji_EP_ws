@@ -39,7 +39,7 @@ gnome-terminal --window -e 'bash -c "
 --tab -e "bash -c \"
     echo 'Loading environment and starting Gazebo simulation...';
     source ${DJI_EP_WS}/setup_env.bash;
-    sleep 1;
+    sleep 5;
     echo 'Launching sim_pkg all_simulate_gazebo.launch...';
     roslaunch sim_pkg all_simulate_gazebo.launch;
     exec bash
@@ -47,17 +47,19 @@ gnome-terminal --window -e 'bash -c "
 --tab -e "bash -c \"
     echo 'Loading environment and starting UAV control...';
     source ${DJI_EP_WS}/setup_env.bash;
-    sleep 2;
-    echo 'Launching sim_pkg uav_control_main_indoor.launch...';
-    roslaunch sim_pkg uav_control_main_indoor.launch;
+    sleep 6;
+    echo 'Launching prometheus_uav_control uav_control_main_indoor.launch...';
+    roslaunch prometheus_uav_control uav_control_main_indoor.launch;
     exec bash
 \"" \
 --tab -e "bash -c \"
+    echo 'Loading environment and starting takeoff/land demo...';
     source ${DJI_EP_WS}/setup_env.bash;
-    sleep 2;
-    bash ${DJI_EP_WS}/src/drone_start/scripts/setup_autonomous_flight.bash;
+    sleep 14;
+    echo 'Launching prometheus_demo takeoff_land.launch...';
+    roslaunch prometheus_demo takeoff_land.launch;
     exec bash
-\"" 
+\""
 
 echo "Simulation started! Check the opened terminal tabs for status."
 echo "If you encounter any issues, check the individual terminal tabs for error messages."
