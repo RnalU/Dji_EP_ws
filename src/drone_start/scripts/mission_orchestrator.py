@@ -309,7 +309,7 @@ class MissionOrchestrator:
                 # 3. 临时降落配送
                 rospy.loginfo("Simulating delivery...")
                 # if not self._do_hold({"duration": 5.0}): return False
-                if not self._do_gimbal_control({"yaw": 90, "pitch": 0}): return False
+                if not self._do_gimbal_control({"yaw": 0, "pitch": -90}): return False
                 if not self._do_land({"final_z": 2.02, "timeout": 10.0}):
                     rospy.logerr("Failed to land for delivery simulation.")
                     return False
@@ -337,12 +337,14 @@ class MissionOrchestrator:
                 
                 # 货架1配送完成，准备开始货架2的扫描和配送
                 if shelf_name == "shelf1":    
+                    self._do_gimbal_control({"yaw": 0, "pitch": 0})
                     rospy.loginfo("Ready for shelf2 delivery.")
 
                 # 如果是货架2的配送，配送完成后回到
                 elif shelf_name == "shelf2":
                     # 货架2的配送已完成
                     rospy.loginfo("Shelf2 delivery completed. Mission will end after landing.")
+                    self._do_gimbal_control({"yaw": 0, "pitch": 0})
                     self.mission_complete_flag = True
 
         else:

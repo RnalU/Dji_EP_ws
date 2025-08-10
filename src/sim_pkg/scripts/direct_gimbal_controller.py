@@ -141,8 +141,14 @@ class DirectGimbalController:
             
             # 角度限制 (匹配新的URDF配置)
             target_yaw = max(-math.pi, min(math.pi, target_yaw))
-            target_pitch = max(-0.6109, min(1.5708, target_pitch))  # -35° to +90°
-            
+            # target_pitch = max(-0.6109, min(1.5708, target_pitch))  # -35° to +90°
+
+            # -90° to 35°
+            if target_pitch > 0:
+                target_pitch = max(0, min(0.6109, target_pitch))
+            if target_pitch < 0:
+                target_pitch = max(-1.5708, min(0, target_pitch))
+
             # 更新目标角度
             self.target_yaw = target_yaw
             self.target_pitch = target_pitch

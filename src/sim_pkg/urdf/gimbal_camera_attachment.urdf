@@ -124,7 +124,12 @@
     <child link="gimbal_pitch_link"/>
     <origin xyz="0 0 -0.008" rpy="0 0 0"/>
     <axis xyz="0 -1 0"/>  <!-- 反转Y轴方向，使正值向上 -->
-    <limit lower="-0.6109" upper="1.5708" effort="2" velocity="2"/>  <!-- -35° to +90° -->
+
+    <!-- -35° to +90° 姿态错误，弃用 -->
+    <!-- <limit lower="-0.6109" upper="1.5708" effort="2" velocity="2"/>   -->
+
+    <!-- -90° to +35° -->
+    <limit lower="-1.5708" upper="0.6109" effort="2" velocity="2"/>  
     <dynamics damping="0.1" friction="0.1"/>
   </joint>
 
