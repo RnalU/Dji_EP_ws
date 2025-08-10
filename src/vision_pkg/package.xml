@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>drone-control-start</name>
+  <name>vision_pkg</name>
   <version>0.0.0</version>
-  <description>The drone-control-start package</description>
+  <description>The vision_pkg package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
@@ -19,7 +19,7 @@
   <!-- Url tags are optional, but multiple are allowed, one per tag -->
   <!-- Optional attribute type can be: website, bugtracker, or repository -->
   <!-- Example: -->
-  <!-- <url type="website">http://wiki.ros.org/drone-control-start</url> -->
+  <!-- <url type="website">http://wiki.ros.org/vision_pkg</url> -->
 
 
   <!-- Author tags are optional, multiple are allowed, one per tag -->

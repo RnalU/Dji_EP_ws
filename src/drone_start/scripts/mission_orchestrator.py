@@ -262,6 +262,11 @@ class MissionOrchestrator:
             for col_idx in range(1, num_cols + 1):
                 wp_name = f"{shelf_name}.{row_name}.col{col_idx}"
                 rospy.loginfo(f"[MissionOrchestrator] Scanning -> {wp_name}")
+                # 开始扫描前根据扫描的货架调整云台角度
+                if shelf_name == "shelf1":
+                    if not self._do_gimbal_control({"yaw": 90, "pitch": 0}): return False
+                if shelf_name == "shelf2":
+                    if not self._do_gimbal_control({"yaw": -90, "pitch": 0}): return False
                 if not self._do_goto({}, wp_name): return False
                 if not self._do_hold({"duration": 3.0}): return False
 
@@ -282,6 +287,9 @@ class MissionOrchestrator:
                 delivery_wp_name = f"{shelf_name}.top.{delivery_col}"
                 rospy.loginfo(f"Delivery task: item '{item_to_deliver}' -> spot '{delivery_wp_name}'")
                 
+                # 在开始配送前先调整云台姿态
+                if not self._do_gimbal_control({"yaw": 0, "pitch": -90}): return False
+
                 # 1. 上升到安全高度 (比顶部航点高0.5m)
                 try:
                     top_z = self._resolve_wp(delivery_wp_name)['z']
@@ -301,6 +309,7 @@ class MissionOrchestrator:
                 # 3. 临时降落配送
                 rospy.loginfo("Simulating delivery...")
                 # if not self._do_hold({"duration": 5.0}): return False
+                if not self._do_gimbal_control({"yaw": 0, "pitch": -90}): return False
                 if not self._do_land({"final_z": 2.02, "timeout": 10.0}):
                     rospy.logerr("Failed to land for delivery simulation.")
                     return False
@@ -322,18 +331,20 @@ class MissionOrchestrator:
                     rospy.logerr("Failed to descend to center position after delivery.")
                     return False
                 # 悬停稳定
-                if not self._do_hold({"duration": 2.0}):
-                    rospy.logerr("Failed to hold at center position after delivery.")
-                    return False
+                # if not self._do_hold({"duration": 2.0}):
+                #     rospy.logerr("Failed to hold at center position after delivery.")
+                #     return False
                 
                 # 货架1配送完成，准备开始货架2的扫描和配送
                 if shelf_name == "shelf1":    
+                    self._do_gimbal_control({"yaw": 0, "pitch": 0})
                     rospy.loginfo("Ready for shelf2 delivery.")
 
                 # 如果是货架2的配送，配送完成后回到
                 elif shelf_name == "shelf2":
                     # 货架2的配送已完成
                     rospy.loginfo("Shelf2 delivery completed. Mission will end after landing.")
+                    self._do_gimbal_control({"yaw": 0, "pitch": 0})
                     self.mission_complete_flag = True
 
         else:
@@ -395,6 +406,11 @@ class MissionOrchestrator:
             self._airborne = False
             self.status_pub.publish(Bool(data=False))
         return ok
+    
+    def _do_gimbal_control(self, args: Dict) -> bool:
+        yaw = float(args.get("yaw", 0.0))
+        pitch = float(args.get("pitch", 0.0))
+        return self.fm.set_gimbal(pitch, 0, yaw, timeout=5.0)
 
     def _do_disarm(self) -> bool:
         self.fm.disarm()

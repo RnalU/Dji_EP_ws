@@ -1,0 +1,18 @@
+# Gazebo云台关节控制器配置
+
+# 关节状态控制器
+joint_state_controller:
+  type: joint_state_controller/JointStateController
+  publish_rate: 50
+
+# Yaw轴位置控制器
+gimbal_yaw_joint_position_controller:
+  type: effort_controllers/JointPositionController
+  joint: gimbal_yaw_joint
+  pid: {p: 100.0, i: 0.01, d: 10.0}
+
+# Pitch轴位置控制器  
+gimbal_pitch_joint_position_controller:
+  type: effort_controllers/JointPositionController
+  joint: gimbal_pitch_joint
+  pid: {p: 100.0, i: 0.01, d: 10.0}

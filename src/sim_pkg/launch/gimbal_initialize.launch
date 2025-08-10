@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- 无人机参数配置及启动 -->
+    <arg name="vehicle" default="p230" />
+    <arg name="d435i_enable" default="false" />
+
+    <!--无人机编号-->
+    <arg name="uav1_id" default="1" />
+
+    <!-- 云台相机参数 -->
+    <arg name="enable_gimbal_camera" default="true" />
+    <arg name="show_gimbal_camera" default="false" />
+
+    <!-- 云台相机系统 --> 
+    <group if="$(arg enable_gimbal_camera)">
+    <!-- 加载云台相机URDF -->
+    <param name="gimbal_camera_description" 
+           textfile="$(find sim_pkg)/urdf/gimbal_camera_attachment.urdf" />
+    
+    <!-- 生成云台相机模型 -->
+    <node name="spawn_gimbal_camera" 
+          pkg="gazebo_ros" 
+          type="spawn_model"
+          args="-urdf -model gimbal_camera_attachment 
+                -param gimbal_camera_description 
+                -x 1.034873
+                -y 2.3
+                -z 0.191558" 
+          respawn="false" />
+
+    <!-- 启动直接云台控制器-->
+    <node name="direct_gimbal_controller" 
+          pkg="sim_pkg" 
+          type="direct_gimbal_controller.py" 
+          output="screen">
+      <param name="uav_ns" value="uav$(arg uav1_id)" />
+    </node>
+
+    <!-- 云台相机TF发布器 -->
+    <node name="gimbal_robot_state_publisher" 
+          pkg="robot_state_publisher" 
+          type="robot_state_publisher">
+      <remap from="robot_description" to="gimbal_camera_description" />
+      <remap from="joint_states" to="/gimbal_camera_attachment/joint_states" />
+    </node>
+
+    <!-- 使用gazebo_ros_link_attacher将云台附着到无人机 (短延迟等待模型加载) -->
+    <node name="attach_gimbal_to_uav" 
+          pkg="gazebo_ros_link_attacher" 
+          type="gimbal_attach.py"
+          launch-prefix="bash -c 'sleep 3; $0 $@'"
+          output="screen"/>
+
+    <!-- 可选：显示云台相机图像 -->
+    <node if="$(arg show_gimbal_camera)" 
+          name="gimbal_camera_view" 
+          pkg="image_view" 
+          type="image_view" 
+          args="image:=/uav$(arg uav1_id)/gimbal_camera/image_raw"
+          respawn="false" />
+    </group>
+
+</launch>

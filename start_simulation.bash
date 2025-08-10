@@ -45,6 +45,14 @@ gnome-terminal --window -e 'bash -c "
     exec bash
 \"" \
 --tab -e "bash -c \"
+    echo 'Loading environment and starting Gimbal simulation...';
+    source ${DJI_EP_WS}/setup_env.bash;
+    sleep 1;
+    echo 'Launching sim_pkg gimbal_initialize.launch...';
+    roslaunch sim_pkg gimbal_initialize.launch;
+    exec bash
+\"" \
+--tab -e "bash -c \"
     echo 'Loading environment and starting UAV control...';
     source ${DJI_EP_WS}/setup_env.bash;
     sleep 2;

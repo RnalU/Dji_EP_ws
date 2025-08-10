@@ -61,7 +61,7 @@ flight_manager.py
 import math
 import threading
 import traceback
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 import rospy
 import tf.transformations as tft
@@ -71,6 +71,13 @@ from nav_msgs.msg import Odometry
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, SetMode
 from std_srvs.srv import Trigger, TriggerResponse
+
+# 可选: 云台控制服务 (真实平台上)
+try:
+    from dji_psdk_ros_driver.srv import gimbalControl, gimbalControlRequest
+    _GIMBAL_AVAILABLE_IMPORT = True
+except Exception:
+    _GIMBAL_AVAILABLE_IMPORT = False
 
 
 class FlightManager:
@@ -148,7 +155,96 @@ class FlightManager:
         # Optional: 提供一个简单 Trigger service 做“急停/中止”示例
         self._abort_srv = rospy.Service("~abort", Trigger, self._abort_cb)
 
+        # ---------------- 云台控制初始化 ----------------
+        self._enable_gimbal = rospy.get_param("~enable_gimbal", True)
+        self._gimbal_service_name = rospy.get_param("~gimbal_service", f"/{self.uav_ns}/gimbalControl")
+        self._is_simulation = rospy.get_param("~simulation_mode", True)  # 默认仿真模式
+        self._gimbal_srv = None
+        self._gimbal_available = False
+        self._gimbal_last = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
+        self._gimbal_connection_retries = 0
+        self._max_gimbal_retries = 3
+
+        # 初始化云台服务连接
+        self._init_gimbal_service()
+
         rospy.loginfo("[FlightManager] Ready.")
+
+    # ------------------------------------------------------------------
+    # Gimbal Initialization
+    # ------------------------------------------------------------------
+    def _init_gimbal_service(self):
+        """初始化云台服务连接"""
+        if not self._enable_gimbal:
+            rospy.loginfo("[FlightManager] Gimbal disabled by parameter.")
+            return
+
+        if not _GIMBAL_AVAILABLE_IMPORT:
+            rospy.logwarn("[FlightManager] Gimbal service messages not imported; disabling gimbal.")
+            self._enable_gimbal = False
+            return
+
+        # 在仿真模式下，给云台控制器更多时间启动
+        gimbal_wait_timeout = rospy.get_param("~gimbal_wait_timeout", 5.0 if self._is_simulation else 3.0)
+        
+        rospy.loginfo("[FlightManager] Waiting for gimbal service %s (timeout=%.1fs, simulation=%s)...",
+                      self._gimbal_service_name, gimbal_wait_timeout, self._is_simulation)
+
+        # 尝试连接云台服务
+        t0 = rospy.Time.now()
+        while not rospy.is_shutdown() and (rospy.Time.now() - t0).to_sec() < gimbal_wait_timeout:
+            try:
+                rospy.wait_for_service(self._gimbal_service_name, timeout=0.5)
+                self._gimbal_srv = rospy.ServiceProxy(self._gimbal_service_name, gimbalControl)
+                self._gimbal_available = True
+                rospy.loginfo("[FlightManager] Gimbal service connected successfully.")
+                
+                # 在仿真模式下，测试服务调用
+                if self._is_simulation:
+                    self._test_gimbal_service()
+                break
+                
+            except Exception as e:
+                rospy.logdebug("[FlightManager] Gimbal service wait attempt failed: %s", e)
+                
+        if not self._gimbal_available:
+            if self._is_simulation:
+                rospy.logwarn("[FlightManager] Gimbal service not available in simulation. "
+                             "请确保已启动: roslaunch drone_start gimbal_simulation.launch")
+            else:
+                rospy.logwarn("[FlightManager] Gimbal service not available on real platform.")
+
+    def _test_gimbal_service(self):
+        """测试云台服务是否正常工作（仅仿真模式）"""
+        try:
+            # 发送一个测试命令（回到中性位置）
+            req = gimbalControlRequest()
+            req.pitch = 0.0
+            req.roll = 0.0  
+            req.yaw = 0.0
+            
+            resp = self._gimbal_srv.call(req)
+            rospy.loginfo("[FlightManager] Gimbal service test successful.")
+            self._gimbal_last = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
+            
+        except Exception as e:
+            rospy.logwarn("[FlightManager] Gimbal service test failed: %s", e)
+            self._gimbal_available = False
+
+    def reconnect_gimbal_service(self) -> bool:
+        """重新连接云台服务（用于运行时恢复）"""
+        if self._gimbal_connection_retries >= self._max_gimbal_retries:
+            rospy.logwarn("[FlightManager] Max gimbal reconnection attempts reached.")
+            return False
+            
+        self._gimbal_connection_retries += 1
+        rospy.loginfo("[FlightManager] Attempting gimbal reconnection (%d/%d)...", 
+                     self._gimbal_connection_retries, self._max_gimbal_retries)
+        
+        self._gimbal_available = False
+        self._init_gimbal_service()
+        
+        return self._gimbal_available
 
     # ------------------------------------------------------------------
     # ROS Callbacks
@@ -560,6 +656,126 @@ class FlightManager:
             return False
         
         return False
+
+    def set_gimbal(self,
+                   pitch: float = None,
+                   roll: float = None,
+                   yaw: float = None,
+                   relative: bool = False,
+                   timeout: float = 2.0) -> bool:
+        """
+        设置云台姿态 (角度单位: 度)
+
+        Args:
+            pitch / roll / yaw: 期望角度 (绝对或相对, 取决于 relative)
+            relative: True 时表示在当前缓存值基础上增量修改
+            timeout: 服务调用超时时间
+
+        行为:
+            - 若仿真中没有云台服务, 仅更新内部缓存并输出日志 (不会报错, 方便顶层统一调用)
+            - 真实平台上调用 gimbalControl 服务
+        """
+        # 如果全部是 None, 不做任何操作
+        if pitch is None and roll is None and yaw is None:
+            rospy.logwarn_throttle(2.0, "[FlightManager] set_gimbal called with all None; skip.")
+            return False
+
+        # 更新目标值 (绝对或相对)
+        tgt = dict(self._gimbal_last)  # 基于上一次
+        if relative:
+            if pitch is not None: tgt["pitch"] += pitch
+            if roll is not None:  tgt["roll"] += roll
+            if yaw is not None:   tgt["yaw"] += yaw
+        else:
+            if pitch is not None: tgt["pitch"] = pitch
+            if roll is not None:  tgt["roll"] = roll
+            if yaw is not None:   tgt["yaw"] = yaw
+
+        # 角度范围裁剪 (示例, 可根据实际云台限制调整)
+        def clamp(v, lo, hi): return max(lo, min(hi, v))
+        tgt["pitch"] = clamp(tgt["pitch"], -90.0, 30.0)   # 俯仰: 向下为负
+        tgt["roll"]  = clamp(tgt["roll"], -45.0, 45.0)
+        tgt["yaw"]   = clamp(tgt["yaw"], -180.0, 180.0)
+
+        if not self._enable_gimbal:
+            rospy.loginfo_throttle(5.0, "[FlightManager] Gimbal disabled. (Sim update only) tgt=%s", tgt)
+            self._gimbal_last = tgt
+            return True
+
+        if not self._gimbal_available:
+            rospy.logwarn_throttle(5.0, "[FlightManager] Gimbal service unavailable (simulate only). tgt=%s", tgt)
+            self._gimbal_last = tgt
+            return True
+
+        # 调用服务
+        try:
+            req = gimbalControlRequest()
+            req.pitch = tgt["pitch"]
+            req.roll = tgt["roll"]
+            req.yaw = tgt["yaw"]
+            # 若服务有其它字段(如 mode / speed), 可在此扩展: req.mode = ...
+            
+            start = rospy.Time.now()
+            resp = self._gimbal_srv.call(req)
+            dt = (rospy.Time.now() - start).to_sec()
+            
+            # 检查响应 (如果服务定义有success字段)
+            try:
+                if hasattr(resp, 'success') and not resp.success:
+                    rospy.logwarn("[FlightManager] Gimbal service returned success=False")
+                    if hasattr(resp, 'message'):
+                        rospy.logwarn("[FlightManager] Gimbal error message: %s", resp.message)
+            except AttributeError:
+                pass  # 服务可能没有这些字段
+            
+            rospy.loginfo("[FlightManager] Gimbal set (p=%.1f r=%.1f y=%.1f) in %.3fs",
+                          req.pitch, req.roll, req.yaw, dt)
+            self._gimbal_last = tgt
+            self._gimbal_connection_retries = 0  # 重置重连计数
+            return True
+            
+        except rospy.ServiceException as e:
+            rospy.logerr("[FlightManager] Gimbal service call failed: %s", e)
+            
+            # 在仿真模式下尝试重连
+            if self._is_simulation and self.reconnect_gimbal_service():
+                rospy.loginfo("[FlightManager] Gimbal reconnected, retrying command...")
+                try:
+                    req = gimbalControlRequest()
+                    req.pitch = tgt["pitch"]
+                    req.roll = tgt["roll"]
+                    req.yaw = tgt["yaw"]
+                    resp = self._gimbal_srv.call(req)
+                    self._gimbal_last = tgt
+                    rospy.loginfo("[FlightManager] Gimbal retry successful")
+                    return True
+                except Exception as retry_e:
+                    rospy.logerr("[FlightManager] Gimbal retry failed: %s", retry_e)
+            
+            # 如果重连失败或不在仿真模式，仅更新缓存
+            rospy.logwarn("[FlightManager] Falling back to cache-only mode for gimbal")
+            self._gimbal_last = tgt
+            return False
+            
+        except Exception as e:
+            rospy.logerr("[FlightManager] Gimbal set exception: %s", e)
+            # 更新缓存以保持状态一致性
+            self._gimbal_last = tgt
+            return False
+
+    def get_gimbal_cached(self) -> Dict[str, float]:
+        """返回最近一次 (缓存的) 云台姿态字典 {pitch, roll, yaw}"""
+        return dict(self._gimbal_last)
+
+    @property
+    def gimbal_available(self) -> bool:
+        """查询云台是否可用"""
+        return self._gimbal_available
+
+    @property
+    def is_simulation_mode(self) -> bool:
+        """查询是否为仿真模式"""
+        return self._is_simulation
 
     def hold(self, duration: float):
         """保持当前目标位姿，阻塞 duration 秒"""
