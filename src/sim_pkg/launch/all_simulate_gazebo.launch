@@ -42,6 +42,8 @@
   <!-- 无人机参数配置及启动 -->
   <arg name="vehicle" default="p230" />
   <arg name="d435i_enable" default="false" />
+  
+
     <!--无人机编号-->
     <arg name="uav1_id" default="1" />
 	<!-- 无人机初始位置 - 在小车停机坪上方 -->
