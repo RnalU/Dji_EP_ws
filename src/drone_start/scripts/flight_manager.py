@@ -72,12 +72,24 @@ from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, SetMode
 from std_srvs.srv import Trigger, TriggerResponse
 
+from std_msgs.msg import Empty
+from vision_pkg.msg import QRCodeResult
+from dji_psdk_ros_driver.msg import flightByVel as FlightVelMsg
+from dji_psdk_ros_driver.srv import takeoffOrLanding
+
 # 可选: 云台控制服务 (真实平台上)
 try:
     from dji_psdk_ros_driver.srv import gimbalControl, gimbalControlRequest
     _GIMBAL_AVAILABLE_IMPORT = True
 except Exception:
     _GIMBAL_AVAILABLE_IMPORT = False
+
+# 检查flightByVel消息是否可用
+try:
+    from dji_psdk_ros_driver.msg import flightByVel
+    _FLIGHT_BY_VEL_AVAILABLE = True
+except Exception:
+    _FLIGHT_BY_VEL_AVAILABLE = False
 
 
 class FlightManager:
@@ -145,6 +157,16 @@ class FlightManager:
             PoseStamped,
             queue_size=20
         )
+        
+        # 真实无人机速度控制发布器
+        if _FLIGHT_BY_VEL_AVAILABLE:
+            self._flight_vel_pub = rospy.Publisher(
+                f"/{self.uav_ns}/flightByVel",
+                flightByVel,
+                queue_size=10
+            )
+        else:
+            self._flight_vel_pub = None
 
         # Services
         rospy.wait_for_service(f"/{self.uav_ns}/mavros/cmd/arming")
@@ -164,6 +186,12 @@ class FlightManager:
         self._gimbal_last = {"pitch": 0.0, "roll": 0.0, "yaw": 0.0}
         self._gimbal_connection_retries = 0
         self._max_gimbal_retries = 3
+
+        # goto_by_velocity相关参数
+        self.velocity_goto_max_speed = rospy.get_param("~velocity_goto_max_speed", 1.0)  # m/s
+        self.velocity_goto_kp_xy = rospy.get_param("~velocity_goto_kp_xy", 0.8)
+        self.velocity_goto_kp_z = rospy.get_param("~velocity_goto_kp_z", 0.6)
+        self.velocity_goto_kp_yaw = rospy.get_param("~velocity_goto_kp_yaw", 1.5)
 
         # 初始化云台服务连接
         self._init_gimbal_service()
@@ -468,7 +496,7 @@ class FlightManager:
             rospy.sleep(0.12)
         return False
 
-    def land(self, final_z: float = 0.05, timeout: float = 20.0, descent_rate: float = 0.3) -> bool:
+    def land(self, final_z: float = 0.15, timeout: float = 20.0, descent_rate: float = 0.3) -> bool:
         """
         智能降落: 分阶段缓慢下降以确保稳定着陆
         
@@ -480,7 +508,7 @@ class FlightManager:
         降落策略:
         1. 分阶段下降
         2. 每个阶段等待稳定后再继续下降
-        3. 接近地面时切换到AUTO.LAND模式（可选）
+        3. 接近地面时切换到AUTO.LAND模式
         4. 检测着陆完成条件：高度低 + 垂直速度小
         """
         if self.current_mode != "OFFBOARD":
@@ -585,6 +613,8 @@ class FlightManager:
                     yaw0 = self.current_yaw_deg
                     self._set_target_pose(x0, y0, final_z, yaw0)
                     rospy.sleep(1.0)
+                    self._offboard_active = False
+                    self.fm._complete_landing_sequence()
                     
                     return True
             else:
@@ -600,60 +630,6 @@ class FlightManager:
                 return True
             
             rospy.sleep(0.2)
-        
-        return False
-
-    def land_auto_mode(self, timeout: float = 15.0) -> bool:
-        """
-        使用PX4的AUTO.LAND模式进行着陆
-        这是一个备选的着陆方法，使用PX4内置的着陆逻辑
-        
-        Args:
-            timeout: 超时时间
-            
-        Returns:
-            bool: 是否着陆成功
-        """
-        rospy.loginfo("[FlightManager] 切换到AUTO.LAND模式进行着陆...")
-        
-        try:
-            # 切换到AUTO.LAND模式
-            resp = self._mode_srv(custom_mode="AUTO.LAND")
-            if not resp.mode_sent:
-                rospy.logerr("[FlightManager] 切换到AUTO.LAND模式失败")
-                return False
-            
-            # 等待模式切换完成
-            mode_switch_timeout = 5.0
-            t0 = rospy.Time.now()
-            while not rospy.is_shutdown():
-                if self.current_mode == "AUTO.LAND":
-                    rospy.loginfo("[FlightManager] 成功切换到AUTO.LAND模式")
-                    break
-                if (rospy.Time.now() - t0).to_sec() > mode_switch_timeout:
-                    rospy.logerr("[FlightManager] AUTO.LAND模式切换超时")
-                    return False
-                rospy.sleep(0.1)
-            
-            # 等待着陆完成
-            t0 = rospy.Time.now()
-            while not rospy.is_shutdown():
-                current_z = self.current_position[2]
-                
-                # 检查是否着陆（高度很低且解锁状态改变）
-                if current_z < 0.15 and not self.is_armed:
-                    rospy.loginfo("[FlightManager] AUTO.LAND着陆完成，无人机已自动上锁")
-                    return True
-                
-                if (rospy.Time.now() - t0).to_sec() > timeout:
-                    rospy.logwarn("[FlightManager] AUTO.LAND着陆超时")
-                    return False
-                
-                rospy.sleep(0.5)
-            
-        except Exception as e:
-            rospy.logerr("[FlightManager] AUTO.LAND着陆异常: %s", e)
-            return False
         
         return False
 
@@ -763,6 +739,232 @@ class FlightManager:
             self._gimbal_last = tgt
             return False
 
+    def precision_qr_land(self,
+                           target_final_alt: float = 0.10,
+                           descent_speed: float = 0.25,
+                           max_xy_speed: float = 0.5,
+                           align_tolerance_px: int = 30,
+                           cancel_tolerance_px: int = 120,
+                           alignment_stable_time: float = 1.0,
+                           qr_timeout: float = 15.0,
+                           camera_width: int = 640,
+                           camera_height: int = 480,
+                           control_rate_hz: float = 5,
+                           pid_kp: float = 1,
+                           pid_ki: float = 0,
+                           pid_kd: float = 0,
+                           pid_integral_limit: float = 0.5) -> bool:
+        """
+        基于二维码辅助的精确降落 (加入 PID 控制对齐):
+          流程:
+            1. 发布 /start_qr_detection (std_msgs/Empty) 触发二维码节点开始发布 /qrcode_result
+            2. 对齐阶段: 通过 PID 控制生成水平速度 (vn, ve) 使二维码中心进入 align_tolerance_px 范围
+            3. 若偏差过大 (cancel_tolerance_px) 或二维码丢失则暂停下降，仅水平对齐
+            4. 对齐稳定 alignment_stable_time 且高度仍高于 target_final_alt + 0.10 -> 进入下降
+            5. 下降阶段：保持 PID 微调，同时以 descent_speed (vel_d) 向下
+            6. 高度 <= target_final_alt + 0.10 -> 归零速度并调用 /takeoffOrLanding (2) 触发最终降落
+        
+        参数:
+            target_final_alt:       最终调用服务降落前接近地面的高度阈值 (m)
+            descent_speed:          下降速度 (m/s) (正值表示向下, 对应 flightByVel.vel_d)
+            max_xy_speed:           水平最大速度限幅 (m/s)
+            align_tolerance_px:     判定已对齐的像素误差阈值
+            cancel_tolerance_px:    降落过程中若偏差超出则暂停下降
+            alignment_stable_time:  需要连续保持对齐的时间 (s) 才允许进入下降
+            qr_timeout:             若在该时间内始终未检测到二维码则放弃
+            camera_width/height:    图像尺寸 (像素)
+            control_rate_hz:        控制循环频率
+            pid_kp/ki/kd:           PID 控制器参数 (对归一化误差作用)
+            pid_integral_limit:     积分项限幅 (归一化量), 防止积分风暴
+        
+        返回:
+            bool: 服务降落是否成功触发 (ack=1)
+        
+        说明:
+            - 采用归一化像素误差 ex_norm = ex / (W/2), ey_norm = ey / (H/2)
+            - vn 对应 ENU 北向速度, ve 对应 ENU 东向速度
+              图像坐标假设: 右=+East, 下=+South => North 误差与 ey_norm 取反
+            - PID 输出直接限幅到 max_xy_speed
+        """  
+        # 调整云台姿态
+        self.set_gimbal(pitch=-90.0, roll=0.0, yaw=0.0)
+
+        # 发布器与服务代理
+        start_qr_pub = rospy.Publisher("/start_qr_detection", Empty, queue_size=1, latch=True)
+        vel_pub = rospy.Publisher("/flightByVel", FlightVelMsg, queue_size=5)
+        rospy.wait_for_service("/takeoffOrLanding")
+        land_srv = rospy.ServiceProxy("/takeoffOrLanding", takeoffOrLanding)
+        
+        qr_data = {
+            "detected": False,
+            "cx": 0.0,
+            "cy": 0.0,
+            "stamp": rospy.Time(0)
+        }
+        
+        def _qr_cb(msg: QRCodeResult):
+            qr_data["detected"] = msg.detected
+            if msg.detected:
+                qr_data["cx"] = msg.position.x
+                qr_data["cy"] = msg.position.y
+            qr_data["stamp"] = rospy.Time.now()
+        
+        qr_sub = rospy.Subscriber("/vision/qrcode_result", QRCodeResult, _qr_cb, queue_size=5)
+        
+        # 触发二维码检测
+        rospy.loginfo("[FlightManager][QR-Land] 触发二维码检测...")
+        # 如果未检测
+        if not qr_data["detected"]:
+            start_qr_pub.publish(Empty())
+        
+        rate = rospy.Rate(control_rate_hz)
+        center_x = camera_width / 2.0
+        center_y = camera_height / 2.0
+        stable_start = None
+        descending = False
+        t_begin = rospy.Time.now()
+        
+        # PID 内部状态
+        prev_err_x = 0.0
+        prev_err_y = 0.0
+        integ_x = 0.0
+        integ_y = 0.0
+        last_time = rospy.Time.now()
+        
+        def publish_velocity(vn, ve, vd, yaw, dur):
+            msg = FlightVelMsg()
+            msg.vel_n = float(vn)
+            msg.vel_e = float(ve)
+            msg.vel_d = float(vd)   # down 正
+            msg.targetYaw = float(yaw)
+            msg.fly_time = float(dur)
+            vel_pub.publish(msg)
+        
+        yaw_ref = self.current_yaw_deg
+        
+        rospy.loginfo("[FlightManager][QR-Land] 开始对齐与下降循环 (PID 控制)...")
+        success = False
+        try:
+            while not rospy.is_shutdown():
+                now = rospy.Time.now()
+                dt = (now - last_time).to_sec()
+                if dt <= 0.0:
+                    dt = 1.0 / control_rate_hz
+                last_time = now
+                alt = self.current_position[2]
+                
+                # 超时
+                if (now - t_begin).to_sec() > qr_timeout and not qr_data["detected"] and not qr_recent:
+                    rospy.logwarn("[FlightManager][QR-Land] 超时未检测到二维码, 中止精确降落")
+                    break
+                
+                # 最近一次有效检测时间 (判断丢失)
+                qr_recent = (now - qr_data["stamp"]).to_sec() < 1.0
+                
+                # 计算像素误差 (若未检测到则视为 0)
+                if qr_data["detected"] and qr_recent:
+                    ex = qr_data["cx"] - center_x   # 像素 x 偏差 (右正)
+                    ey = qr_data["cy"] - center_y   # 像素 y 偏差 (下正)
+                else:
+                    ex = 0.0
+                    ey = 0.0
+                
+                # 归一化误差
+                err_x_norm = -ex / (camera_width / 2.0)      
+                err_y_norm = ey / (camera_height / 2.0)    
+                
+                aligned = (abs(ex) <= align_tolerance_px) and (abs(ey) <= align_tolerance_px) and qr_data["detected"] and qr_recent
+
+                # 输出调试信息
+                rospy.loginfo("[FlightManager][QR-Land] 当前二维码检测状态: %s", qr_data["detected"])
+                rospy.loginfo("[FlightManager][QR-Land] 当前像素误差: ex=%.2f, ey=%.2f", ex, ey)
+
+                # 对齐稳定计时
+                if aligned and not descending:
+                    if stable_start is None:
+                        stable_start = now
+                    elif (now - stable_start).to_sec() >= alignment_stable_time and alt > (target_final_alt + 0.10):
+                        rospy.loginfo("[FlightManager][QR-Land] 对齐稳定, 开始下降...")
+                        descending = True
+                elif not aligned and not descending:
+                    stable_start = None  # 重置稳定计时
+                
+                # 若正在下降但偏差过大 -> 暂停下降
+                if descending and (abs(ex) > cancel_tolerance_px or abs(ey) > cancel_tolerance_px or not qr_data["detected"]):
+                    rospy.logwarn("[FlightManager][QR-Land] 偏差过大/二维码丢失, 暂停下降重新对齐")
+                    descending = False
+                    stable_start = None
+                
+                # 接近最终高度 -> 服务降落
+                if alt <= (target_final_alt + 0.10):
+                    rospy.loginfo("[FlightManager][QR-Land] 接近目标高度 (%.2f m), 归零速度, 调用服务降落", alt)
+                    publish_velocity(0.0, 0.0, 0.0, yaw_ref, 0.3)
+                    rospy.sleep(0.3)
+                    try:
+                        resp = land_srv(takeoffOrLanding=2)
+                        if getattr(resp, "ack", 0) == 1:
+                            rospy.loginfo("[FlightManager][QR-Land] 服务降落指令发送成功 (ack=1)")
+                            success = True
+                        else:
+                            rospy.logwarn("[FlightManager][QR-Land] 服务降落返回 ack!=1")
+                        return success
+                    except Exception as e:
+                        rospy.logerr("[FlightManager][QR-Land] 服务降落调用失败: %s", e)
+                        return False
+                
+                # PID 计算 (只有在检测到并近期有效时更新, 否则输出=0 并衰减积分)
+                if qr_data["detected"] and qr_recent:
+                    # East 方向 (ve) 使用 err_x_norm
+                    # North 方向 (vn) 使用 -err_y_norm
+                    err_e = err_x_norm
+                    err_n = -err_y_norm
+                    # 积分
+                    integ_x += err_e * dt
+                    integ_y += err_n * dt
+                    # Anti-windup
+                    integ_x = max(-pid_integral_limit, min(pid_integral_limit, integ_x))
+                    integ_y = max(-pid_integral_limit, min(pid_integral_limit, integ_y))
+                    # 微分
+                    der_x = (err_e - prev_err_x) / dt
+                    der_y = (err_n - prev_err_y) / dt
+                    # PID 输出
+                    ve = pid_kp * err_e + pid_ki * integ_x + pid_kd * der_x
+                    vn = pid_kp * 1.5 * err_n + pid_ki * integ_y + pid_kd * der_y
+                    prev_err_x = err_e
+                    prev_err_y = err_n
+                    # 限幅
+                    ve = max(-max_xy_speed, min(max_xy_speed, ve))
+                    vn = max(-max_xy_speed, min(max_xy_speed, vn))
+
+                    rospy.loginfo("[FlightManager][QR-Land] PID 控制: ve=%.2f, vn=%.2f", ve, vn)
+
+                else:
+                    # 未检测到 -> 停止水平运动, 轻微积分衰减 (防止恢复时突跳)
+                    ve = 0.0
+                    vn = 0.0
+                    integ_x *= 0.9
+                    integ_y *= 0.9
+                    prev_err_x = 0.0
+                    prev_err_y = 0.0
+                
+                # 垂直速度
+                if descending:
+                    vd = descent_speed  # 正向下
+                else:
+                    vd = 0.0
+                    # 若未开始下降也可以在完全对齐时轻微下探(可选), 目前保持 0
+                
+                # 若二维码丢失则完全悬停
+                if not (qr_data["detected"] and qr_recent):
+                    vd = 0.0
+                
+                publish_velocity(vn, ve, vd, yaw_ref, 1.0 / control_rate_hz)
+                rate.sleep()
+        finally:
+            qr_sub.unregister()
+        
+        return success
+    
     def get_gimbal_cached(self) -> Dict[str, float]:
         """返回最近一次 (缓存的) 云台姿态字典 {pitch, roll, yaw}"""
         return dict(self._gimbal_last)
@@ -808,7 +1010,51 @@ class FlightManager:
             self._offboard_thread = None
         rospy.loginfo("[FlightManager] Shutdown complete.")
 
-
+    def _complete_landing_sequence(self) -> bool:
+        """
+        切换模式并上锁
+        """
+        rospy.loginfo("[UnifiedFlightController] Completing landing sequence...")
+        
+        try:
+            # 方法1：尝试切换到AUTO.LAND模式
+            rospy.loginfo("[UnifiedFlightController] Attempting AUTO.LAND mode...")
+            try:
+                response = self._mode_srv(custom_mode="AUTO.LAND")
+                if response.mode_sent:
+                    rospy.loginfo("[UnifiedFlightController] Switched to AUTO.LAND mode")
+                    rospy.sleep(3.0)  # 等待AUTO.LAND完成
+                else:
+                    rospy.logwarn("[UnifiedFlightController] AUTO.LAND mode switch failed")
+            except Exception as e:
+                rospy.logwarn(f"[UnifiedFlightController] AUTO.LAND failed: {e}")
+            
+            # 方法2：切换到MANUAL模式
+            rospy.loginfo("[UnifiedFlightController] Switching to MANUAL mode...")
+            try:
+                response = self._mode_srv(custom_mode="MANUAL")
+                if response.mode_sent:
+                    rospy.loginfo("[UnifiedFlightController] Switched to MANUAL mode")
+                    rospy.sleep(1.0)
+                else:
+                    rospy.logwarn("[UnifiedFlightController] MANUAL mode switch failed")
+            except Exception as e:
+                rospy.logwarn(f"[UnifiedFlightController] MANUAL mode switch failed: {e}")
+            
+            # 方法3：上锁
+            rospy.loginfo("[UnifiedFlightController] Disarming...")
+            disarm_success = self.disarm()
+            if disarm_success:
+                rospy.loginfo("[UnifiedFlightController] Successfully disarmed")
+            else:
+                rospy.logwarn("[UnifiedFlightController] Disarm failed")
+            
+            return disarm_success
+            
+        except Exception as e:
+            rospy.logerr(f"[UnifiedFlightController] Landing sequence completion failed: {e}")
+            return False
+        
 # ----------------------------------------------------------------------
 # Standalone test / demo (optional)
 # ----------------------------------------------------------------------
@@ -838,8 +1084,7 @@ def _demo():
         # 使用改进的着陆方法
         rospy.loginfo("[FlightManager Demo] 开始着陆...")
         if not fm.land():
-            rospy.logwarn("[FlightManager Demo] 智能着陆失败，尝试AUTO.LAND模式")
-            fm.land_auto_mode()
+            rospy.logwarn("[FlightManager Demo] 智能着陆失败")
         
         fm.disarm()
     except Exception as e:
