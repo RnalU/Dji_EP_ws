@@ -5,7 +5,7 @@
     <material>Gazebo/Red</material>
   </gazebo>
   <gazebo reference="landing_pad">
-    <material>Gazebo/White</material>
+    <material>YMC/QRCODE</material>
   </gazebo>
   <gazebo reference="base_link">
     <material>Gazebo/Blue</material>
@@ -376,7 +376,9 @@
     <joint name="landing_pad_joint" type="fixed">
         <parent link="base_link" />
         <child link="landing_pad" />
-        <origin xyz="0 0 0.06" />
+
+        <!-- z轴逆时针旋转90° -->
+        <origin xyz="0 0 0.06" rpy="0 0 1.57" />
     </joint>
 
     <!-- 支架 x 4 -->
