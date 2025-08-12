@@ -1,0 +1,27 @@
+<launch>
+    <!-- 二维码检测启动文件 -->
+    
+    <!-- 参数 -->
+    <arg name="debug_mode" default="true" doc="是否启用调试模式"/>
+    <arg name="image_topic" default="/uav1/gimbal_camera/image_raw" doc="输入图像话题"/>
+    <arg name="publish_result" default="true" doc="是否发布检测结果"/>
+    <arg name="node_name" default="qrcode_detector" doc="节点名称"/>
+    
+    <!-- 二维码检测节点 -->
+    <node name="$(arg node_name)" pkg="vision_pkg" type="qrcode_detector.py" output="screen">
+        <param name="debug_mode" value="$(arg debug_mode)"/>
+        <param name="image_topic" value="$(arg image_topic)"/>
+        <param name="publish_result" value="$(arg publish_result)"/>
+        
+        <!-- 重映射话题 -->
+        <remap from="qrcode_result" to="/vision/qrcode_result"/>
+        <remap from="qrcode_debug_image" to="/vision/qrcode_debug_image"/>
+        <remap from="detect_qrcode" to="/vision/detect_qrcode"/>
+    </node>
+    
+    <!-- 可选：启动图像查看器来查看调试图像 -->
+    <group if="$(arg debug_mode)">
+        <node name="qrcode_image_view" pkg="image_view" type="image_view" args="image:=/vision/qrcode_debug_image" output="screen" required="false"/>
+    </group>
+
+</launch>
