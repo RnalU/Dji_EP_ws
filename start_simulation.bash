@@ -63,7 +63,7 @@ gnome-terminal --window -e 'bash -c "
 --tab -e "bash -c \"
     source ${DJI_EP_WS}/setup_env.bash;
     sleep 2;
-    bash ${DJI_EP_WS}/src/drone_start/scripts/setup_autonomous_flight.bash;
+    bash ${DJI_EP_WS}/src/drone_start/scripts/setup_autonomous_flight.bash;rosrun drone_start drone_services.py;
     exec bash
 \"" 
 

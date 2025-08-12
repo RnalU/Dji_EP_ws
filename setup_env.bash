@@ -95,6 +95,12 @@ fi
 echo "  - Re-adding PX4 packages to ROS_PACKAGE_PATH (post-workspace)"
 export ROS_PACKAGE_PATH="${PX4_PATH}/prometheus_px4:${PX4_PATH}/prometheus_px4/Tools/sitl_gazebo:$ROS_PACKAGE_PATH"
 
+# 确保PX4路径正确添加到ROS_PACKAGE_PATH
+if [[ ! "$ROS_PACKAGE_PATH" == *"${PX4_PATH}/prometheus_px4"* ]]; then
+    echo "  - WARNING: PX4 path not properly added to ROS_PACKAGE_PATH, adding it again"
+    export ROS_PACKAGE_PATH="${PX4_PATH}/prometheus_px4:${PX4_PATH}/prometheus_px4/Tools/sitl_gazebo:$ROS_PACKAGE_PATH"
+fi
+
 echo ""
 echo "Environment setup complete!"
 echo "Available workspaces:"
