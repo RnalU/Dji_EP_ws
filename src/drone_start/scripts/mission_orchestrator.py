@@ -61,7 +61,8 @@ from std_msgs.msg import Empty, Bool
 
 # 相对导入同目录 flight_manager (确保此脚本在同一包 scripts 下)
 try:
-    from flight_manager import FlightManager
+    # from flight_manager import FlightManager
+    from unified_flight_controller import UnifiedFlightController
 except ImportError:
     rospy.logerr("Cannot import flight_manager. Make sure it's in the same package scripts directory.")
     raise
@@ -118,7 +119,7 @@ class MissionOrchestrator:
         self.wp_delim = rospy.get_param("~waypoint_delimiter", ".")
 
         # 创建 FlightManager
-        self.fm = FlightManager(uav_ns=self.uav_ns)
+        self.fm = UnifiedFlightController()
 
         # 创建任务结束标志 （用于当任务结束后，飞机触发降落命令时，待完成降落后发布状态话题给小车，继续执行下一个任务）
         self.mission_complete_flag = False
@@ -159,11 +160,13 @@ class MissionOrchestrator:
         """生成顶层任务序列 (高级动作)"""
         rospy.loginfo("[MissionOrchestrator] Generating high-level mission steps...")
         steps = [
-            {"action": "takeoff", "args": {"height": 1, "timeout": 10.0}},
+            {"action": "takeoff", "args": {"height": 0.5, "timeout": 10.0}},
+            # {"action": "hold", "duration": 10},
+            # {"action": "goto", "args": {"x": 3.5, "y": 3.2, "z": 1.0, "yaw": 0.0}},
             {"action": "scan_and_deliver", "args": {"shelf_name": "shelf1"}},
             {"action": "scan_and_deliver", "args": {"shelf_name": "shelf2"}},
             {"action": "goto", "wp": "points.point2", "args": {"timeout": 20.0}},
-            {"action": "land", "args": {"final_z": 0.15, "timeout": 15.0}},
+            {"action": "precision_landing", "args": {"final_z": 0.15, "detect_topic": "/vision/qrcode_result", "start_topic": "/start_qr_detection"}},
             {"action": "disarm"}
         ]
         rospy.loginfo("[MissionOrchestrator] Generated %d high-level steps.", len(steps))
@@ -219,7 +222,8 @@ class MissionOrchestrator:
         if action == "disarm": return self._do_disarm()
         if action == "arm": return self._do_arm()
         if action == "scan_and_deliver": return self._do_scan_and_deliver(args)
-        
+        if action == "precision_landing": return self._do_precision_landing(args)
+
         rospy.logwarn("[MissionOrchestrator] Unknown action '%s' -> skip", action)
         return False
 
@@ -239,7 +243,7 @@ class MissionOrchestrator:
         shelf_name = args.get("shelf_name")
         if not shelf_name:
             rospy.logerr("[MissionOrchestrator] 'shelf_name' not provided for scan_and_deliver.")
-            return False
+             
 
         config = self.scan_config.get(shelf_name, {})
         scan_row_name = f"row{config.get('scan_row')}"
@@ -293,9 +297,9 @@ class MissionOrchestrator:
                 # 1. 上升到安全高度 (比顶部航点高0.5m)
                 try:
                     top_z = self._resolve_wp(delivery_wp_name)['z']
-                    safe_z = top_z + 0.5
+                    safe_z = top_z + 0.15
                     rospy.loginfo(f"Ascending to safe height: {safe_z}m")
-                    if not self.fm.goto(self.fm.current_position[0], self.fm.current_position[1], safe_z, self.fm.current_yaw_deg, timeout=10.0):
+                    if not self.fm.goto(self.fm.current_position[0], self.fm.current_position[1], safe_z, self.fm.current_yaw_deg):
                         return False
                 except Exception as e:
                     rospy.logerr(f"Could not resolve delivery waypoint Z for safety check: {e}")
@@ -310,7 +314,7 @@ class MissionOrchestrator:
                 rospy.loginfo("Simulating delivery...")
                 # if not self._do_hold({"duration": 5.0}): return False
                 if not self._do_gimbal_control({"yaw": 0, "pitch": -90}): return False
-                if not self._do_land({"final_z": 2.02, "timeout": 10.0}):
+                if not self._do_land({"final_z": 2.02, "timeout": 60.0}):
                     rospy.logerr("Failed to land for delivery simulation.")
                     return False
                 rospy.loginfo("Delivery complete.")
@@ -319,15 +323,15 @@ class MissionOrchestrator:
                 # 这里无论是货架1还是货架2，配送完成后都需要回到中心点
                 rospy.loginfo("Moving to center for next shelf delivery...")
                 # 先在当前位置升高
-                if not self.fm.goto(self.fm.current_position[0], self.fm.current_position[1], safe_z + 0.5, self.fm.current_yaw_deg, timeout=10.0):
+                if not self.fm.goto(self.fm.current_position[0], self.fm.current_position[1], safe_z + 0.15, self.fm.current_yaw_deg):
                     rospy.logerr("Failed to ascend to center position after delivery.")
                     return False
                 # 然后前往中心点
-                if not self.fm.goto(4.5, 2.3, safe_z + 0.5, self.fm.current_yaw_deg, timeout=10.0):
+                if not self.fm.goto(4.5, 2.3, safe_z + 0.15, self.fm.current_yaw_deg):
                     rospy.logerr("Failed to ascend to center position after delivery.")
                     return False
                 # 下降到合适的高度
-                if not self.fm.goto(4.5, 2.3, 1, self.fm.current_yaw_deg, timeout=10.0):
+                if not self.fm.goto(4.5, 2.3, 1, self.fm.current_yaw_deg):
                     rospy.logerr("Failed to descend to center position after delivery.")
                     return False
                 # 悬停稳定
@@ -367,8 +371,6 @@ class MissionOrchestrator:
     def _do_takeoff(self, args: Dict) -> bool:
         height = float(args.get("height", 1.0))
         timeout = float(args.get("timeout", 10.0))
-        if not self.fm.is_armed and not self.fm.arm(): return False
-        if self.fm.current_mode != "OFFBOARD" and not self.fm.enter_offboard(): return False
         ok = self.fm.takeoff(height, timeout=timeout)
         if ok:
             self._airborne = True
@@ -376,7 +378,7 @@ class MissionOrchestrator:
         return ok
 
     def _do_goto(self, args: Dict, wp_name: str) -> bool:
-        timeout = float(args.get("timeout", 15.0))
+        timeout = float(args.get("timeout", 60.0))
         x, y, z, yaw = args.get("x"), args.get("y"), args.get("z"), args.get("yaw")
         if wp_name:
             try:
@@ -400,32 +402,41 @@ class MissionOrchestrator:
 
     def _do_land(self, args: Dict) -> bool:
         final_z = float(args.get("final_z", 0.05))
-        timeout = float(args.get("timeout", 12.0))
+        timeout = float(args.get("timeout", 30.0))
         ok = self.fm.land(final_z=final_z, timeout=timeout)
         if ok and self.mission_complete_flag:
             self._airborne = False
             self.status_pub.publish(Bool(data=False))
         return ok
-    
+
+    def _do_precision_landing(self, args: Dict) -> bool:
+        detection_result_topic: str = args.get("detect_topic", "")
+        start_detection_topic: str = args.get("start_topic", "")
+        target_height: float = float(args.get("final_z", 0.0))
+        # 处理精准降落逻辑
+        return self.fm.precision_landing(detection_result_topic, start_detection_topic, target_height)
+
     def _do_gimbal_control(self, args: Dict) -> bool:
         yaw = float(args.get("yaw", 0.0))
         pitch = float(args.get("pitch", 0.0))
         return self.fm.set_gimbal(pitch, 0, yaw, timeout=5.0)
 
     def _do_disarm(self) -> bool:
-        self.fm.disarm()
+        """弃用"""
+        # self.fm.disarm()
         return True
 
     def _do_arm(self) -> bool:
-        if not self.fm.is_armed: return self.fm.arm()
+        """弃用"""
+        # if not self.fm.is_armed: return self.fm.arm()
         rospy.loginfo("[MissionOrchestrator] UAV already armed.")
         return True
 
     def abort(self, reason: str = ""):
         rospy.logwarn("[MissionOrchestrator] Abort called. Reason: %s", reason)
         self._abort_flag = True
-        self.fm.abort(reason)
-        self.fm.disarm()
+        # self.fm.abort(reason)
+        # self.fm.disarm()
 
     def print_waypoints(self):
         rospy.loginfo("Loaded waypoints (top-level keys): %s", list(self.waypoints.keys()))
