@@ -311,7 +311,7 @@ class MissionController:
                 self.transition_state(MissionState.MOVING_TO_CHARGE)
 
             # Debug
-            self.state_timeout = rospy.Duration(300)  # 300S 任务执行延迟阈值
+            self.state_timeout = rospy.Duration(360)  # 360S 任务执行延迟阈值
 
         # 移动到充电站
         elif self.current_state == MissionState.MOVING_TO_CHARGE:

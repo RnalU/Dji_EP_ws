@@ -1,0 +1,6 @@
+# 二维码检测服务
+sensor_msgs/Image image       # 输入图像
+---
+bool success                  # 是否成功检测
+QRCodeResult result          # 检测结果
+string message               # 状态信息
