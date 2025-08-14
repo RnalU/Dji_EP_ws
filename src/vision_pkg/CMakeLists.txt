@@ -17,7 +17,9 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
 )
 
-find_package(OpenCV REQUIRED)
+# 设置OpenCV路径
+set(OpenCV4_DIR "/home/ymc/opencv4.9/release/lib/cmake/opencv4")
+find_package(OpenCV 4 REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -124,6 +126,8 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${FFMPEG_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -155,6 +159,29 @@ include_directories(
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
+
+add_executable(rtsp_gstreamer_node src/cpp_rtsp_video_stream.cpp)
+add_dependencies(rtsp_gstreamer_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(rtsp_gstreamer_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBS}
+)
+
+# 依赖: libavformat libavcodec libavutil libswscale (以及可选硬件加速, 如 cuda/vaapi)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
+
+add_executable(rtsp_ffmpeg_node src/rtsp_ffmpeg_node.cpp)
+add_dependencies(rtsp_ffmpeg_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_include_directories(rtsp_ffmpeg_node PRIVATE ${FFMPEG_INCLUDE_DIRS})
+target_link_libraries(rtsp_ffmpeg_node
+  ${catkin_LIBRARIES}
+  PkgConfig::FFMPEG
+)
+target_compile_definitions(rtsp_ffmpeg_node PRIVATE __STDC_CONSTANT_MACROS __STDC_LIMIT_MACROS)
+
+
 
 #############
 ## Install ##

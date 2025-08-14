@@ -25,6 +25,8 @@ from cv_bridge import CvBridge
 from std_msgs.msg import Header
 import signal
 import sys
+import subprocess
+import shutil
 
 
 class OptimizedRTSPStreamer:
@@ -33,39 +35,47 @@ class OptimizedRTSPStreamer:
     def __init__(self):
         """初始化RTSP流处理器"""
         rospy.init_node('rtsp_streamer', anonymous=True)
-        
+
         # 参数配置
-        self.rtsp_url = rospy.get_param('~rtsp_url', 'rtsp://127.0.0.1:8554/live')
+        self.rtsp_url = rospy.get_param('~rtsp_url', 'rtsp://192.168.160.253:8554/live')
         self.output_topic = rospy.get_param('~output_topic', '/vision/gimbal_camera/image_raw')
-        self.fps_limit = rospy.get_param('~fps_limit', 30)  # 限制发布帧率
-        self.buffer_size = rospy.get_param('~buffer_size', 1)  # 缓冲区大小
-        self.reconnect_delay = rospy.get_param('~reconnect_delay', 2.0)  # 重连延迟
-        self.use_gstreamer = rospy.get_param('~use_gstreamer', True)  # 是否使用GStreamer
-        
-        # ROS相关
+        self.fps_limit = rospy.get_param('~fps_limit', 30)
+        self.buffer_size = rospy.get_param('~buffer_size', 1)
+        self.reconnect_delay = rospy.get_param('~reconnect_delay', 2.0)
+        self.use_gstreamer = rospy.get_param('~use_gstreamer', True)
+        self.decode_mode = rospy.get_param('~decode_mode', 'auto').lower()
+        self.latency_ms = rospy.get_param('~latency', 50)
+        self.force_tcp = rospy.get_param('~force_tcp', True)
+
+        # ROS 组件
         self.bridge = CvBridge()
         self.image_pub = rospy.Publisher(self.output_topic, Image, queue_size=1)
-        
+
         # 线程控制
         self.frame_queue = queue.Queue(maxsize=self.buffer_size)
         self.running = True
         self.capture_thread = None
         self.publish_thread = None
-        
-        # 监控统计
+
+        # 统计
         self.frame_count = 0
         self.last_fps_time = time.time()
         self.current_fps = 0
         self.total_latency = 0
         self.latency_samples = 0
-        
-        # OpenCV视频捕获对象
+
+        # 视频捕获对象
         self.cap = None
-        
-        rospy.loginfo(f"RTSP Streamer初始化完成")
+
+        rospy.loginfo("RTSP Streamer初始化完成")
         rospy.loginfo(f"RTSP URL: {self.rtsp_url}")
         rospy.loginfo(f"输出话题: {self.output_topic}")
         rospy.loginfo(f"使用GStreamer: {self.use_gstreamer}")
+        rospy.loginfo(f"解码模式: {self.decode_mode}")
+
+        self._log_opencv_gst_support()
+        # 注册信号处理
+        signal.signal(signal.SIGINT, self._signal_handler)
         
         # 注册信号处理
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -76,26 +86,80 @@ class OptimizedRTSPStreamer:
         self.stop()
         sys.exit(0)
         
-    def _create_gstreamer_pipeline(self):
-        """创建GStreamer管道用于低延迟RTSP接收"""
-        # 尝试多种GStreamer管道配置
-        pipelines = [
-            # 高级低延迟管道
-            f"rtspsrc location={self.rtsp_url} latency=0 buffer-mode=0 ! "
-            "rtph264depay ! h264parse ! avdec_h264 ! "
-            "videoconvert ! videoscale ! "
-            "video/x-raw,format=BGR ! appsink emit-signals=true sync=false max-buffers=1 drop=true",
-            
-            # 简化管道（兼容性更好）
-            f"rtspsrc location={self.rtsp_url} latency=0 ! "
-            "rtph264depay ! avdec_h264 ! videoconvert ! "
-            "video/x-raw,format=BGR ! appsink",
-            
-            # 基础管道
-            f"rtspsrc location={self.rtsp_url} ! "
-            "rtph264depay ! avdec_h264 ! videoconvert ! appsink"
+    def _has_exec(self, name: str) -> bool:
+        return shutil.which(name) is not None
+
+    def _has_gst_element(self, element: str) -> bool:
+        """通过 gst-inspect-1.0 检查元素是否存在"""
+        if not self._has_exec('gst-inspect-1.0'):
+            return False
+        try:
+            out = subprocess.run(['gst-inspect-1.0', element], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+            return out.returncode == 0
+        except Exception:
+            return False
+
+    def _log_opencv_gst_support(self):
+        try:
+            build_info = cv2.getBuildInformation()
+            gst_supported = 'GStreamer' in build_info and 'YES' in [l.split(':')[1].strip() for l in build_info.split('\n') if l.startswith('GStreamer')][:1]
+            rospy.loginfo(f"OpenCV 编译 GStreamer 支持: {gst_supported}")
+        except Exception:
+            rospy.logwarn("无法获取 OpenCV 构建信息")
+
+    def _select_decoder_chain(self):
+        """根据模式与可用插件选择解码器链 (不含 avdec 前后的空格)."""
+        # 优先顺序: 用户指定 gpu -> 自动探测 NVDEC / VAAPI / CPU
+        gpu_candidates = [
+            ('nvh264dec', 'nvh264dec ! videoconvert'),  # NVIDIA dGPU (gst-plugins-bad 1.20+)
+            ('nvv4l2decoder', 'nvv4l2decoder ! videoconvert'),  # Jetson
+            ('vah264dec', 'vah264dec ! videoconvert'),  # 部分 VAAPI 命名
+            ('vaapih264dec', 'vaapih264dec ! videoconvert'),  # VAAPI 常规
         ]
-        
+
+        cpu_chain = 'avdec_h264 ! videoconvert'
+
+        # 强制 CPU
+        if self.decode_mode == 'cpu':
+            return 'CPU', cpu_chain
+
+        # 强制 GPU (如果失败再回退 CPU)
+        if self.decode_mode == 'gpu':
+            for name, chain in gpu_candidates:
+                if self._has_gst_element(name):
+                    return name, chain
+            rospy.logwarn("未发现可用 GPU 解码器, 回退 CPU")
+            return 'CPU', cpu_chain
+
+        # auto 模式
+        for name, chain in gpu_candidates:
+            if self._has_gst_element(name):
+                return name, chain
+        return 'CPU', cpu_chain
+
+    def _create_gstreamer_pipeline(self):
+        """创建多套 GStreamer 管道用于尝试"""
+        decoder_name, decoder_chain = self._select_decoder_chain()
+        proto = ' protocols=tcp' if self.force_tcp else ''
+        latency = max(0, int(self.latency_ms))
+
+        # 共性 appsink 片段
+        appsink_part = 'appsink emit-signals=false sync=false max-buffers=1 drop=true enable-last-sample=false'
+        # 注意：某些 OpenCV 版本不识别 emit-signals, 仍可忽略
+
+        base_src = f"rtspsrc location={self.rtsp_url}{proto} latency={latency} drop-on-latency=true"
+
+        # 常见问题: 过低 latency=0 可能退化；因此提供多级
+        pipelines = [
+            (f"低延迟({decoder_name})", f"{base_src} ! rtph264depay ! h264parse ! queue max-size-buffers=1 leaky=downstream ! {decoder_chain} ! video/x-raw,format=BGR ! {appsink_part}"),
+            (f"基础({decoder_name})", f"{base_src} ! rtph264depay ! {decoder_chain} ! video/x-raw,format=BGR ! {appsink_part}"),
+            (f"最小({decoder_name})", f"{base_src} ! rtph264depay ! {decoder_chain} ! {appsink_part}"),
+        ]
+
+        # 额外尝试 latency=0 极限模式
+        zero_latency_src = f"rtspsrc location={self.rtsp_url}{proto} latency=0 buffer-mode=0"
+        pipelines.append((f"极限0ms({decoder_name})", f"{zero_latency_src} ! rtph264depay ! h264parse ! {decoder_chain} ! video/x-raw,format=BGR ! {appsink_part}"))
+
         return pipelines
         
     def _create_opencv_backend(self):
@@ -112,41 +176,38 @@ class OptimizedRTSPStreamer:
                 if self.use_gstreamer:
                     # 尝试多种GStreamer管道
                     pipelines = self._create_gstreamer_pipeline()
-                    connected = False
-                    
-                    for i, pipeline in enumerate(pipelines):
+                    for i, (desc, pipeline) in enumerate(pipelines, start=1):
                         try:
-                            rospy.loginfo(f"尝试GStreamer管道 {i+1}: {pipeline}")
+                            rospy.loginfo(f"尝试GStreamer管道[{i}/{len(pipelines)}] {desc}: {pipeline}")
                             self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
-                            
                             if self.cap is None or not self.cap.isOpened():
-                                rospy.logwarn(f"管道 {i+1} 初始化失败")
+                                rospy.logwarn(f"{desc} 初始化失败 (打不开 VideoCapture)")
                                 continue
-                            
-                            # 设置缓冲区大小
                             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                            
-                            # 测试读取
-                            for test_attempt in range(3):  # 尝试读取3次
+                            # 读取多次, 给硬件解码预热
+                            warm_ok = False
+                            for test_attempt in range(6):
                                 ret, frame = self.cap.read()
-                                if ret and frame is not None:
-                                    rospy.loginfo(f"成功连接RTSP流，帧大小: {frame.shape}")
+                                if ret and frame is not None and frame.size > 0:
+                                    w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                    h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                    fps = self.cap.get(cv2.CAP_PROP_FPS)
+                                    rospy.loginfo(f"连接成功[{desc}] 分辨率: {w}x{h} FPS(报告): {fps:.2f}")
+                                    warm_ok = True
                                     return True
-                                time.sleep(0.1)  # 等待一点时间
-                            
-                            rospy.logwarn(f"管道 {i+1} 无法读取帧")
-                            self.cap.release()
-                            
+                                time.sleep(0.08)
+                            if not warm_ok:
+                                rospy.logwarn(f"{desc} 无法读取有效帧")
+                                self.cap.release()
                         except Exception as e:
-                            rospy.logwarn(f"管道 {i+1} 异常: {e}")
+                            rospy.logwarn(f"{desc} 异常: {e}")
                             if self.cap:
                                 self.cap.release()
                                 self.cap = None
                             continue
-                    
-                    # 所有GStreamer管道都失败
-                    rospy.logwarn("所有GStreamer管道都失败，尝试OpenCV后端")
-                    self.use_gstreamer = False
+                    rospy.logwarn("所有GStreamer管道都失败")
+                    # rospy.logwarn("所有GStreamer管道都失败，尝试OpenCV后端")
+                    # self.use_gstreamer = False
                     
                 if not self.use_gstreamer:
                     # 使用OpenCV默认后端

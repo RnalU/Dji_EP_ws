@@ -1,0 +1,36 @@
+<launch>
+    <!-- FFmpeg RTSP 拉流节点启动文件 -->
+    <arg name="rtsp_url" default="rtsp://192.168.160.253:8554/live" />
+    <arg name="output_topic" default="/vision/ffmpeg/image_raw" />
+    <arg name="publish_fps" default="30" />
+    <arg name="force_tcp" default="flase" />
+    <arg name="hw_accel" default="auto" />  <!-- auto / none / vaapi / cuda / v4l2m2m -->
+    <arg name="video_width" default="640" />  <!-- 0 = 不强制缩放 -->
+    <arg name="video_height" default="480" />
+    <arg name="low_delay_flags" default="true" />
+    <arg name="reconnect_delay_ms" default="1500" />
+    <arg name="max_open_retry" default="10" />
+    <arg name="node_name" default="rtsp_ffmpeg_node" />
+    <arg name="screen" default="true" />
+    <arg name="debug_view" default="true" />
+
+    <node pkg="vision_pkg" type="rtsp_ffmpeg_node" name="$(arg node_name)" output="screen" required="true">
+        <param name="rtsp_url" value="$(arg rtsp_url)" />
+        <param name="output_topic" value="$(arg output_topic)" />
+        <param name="publish_fps" value="$(arg publish_fps)" />
+        <param name="force_tcp" value="$(arg force_tcp)" />
+        <param name="hw_accel" value="$(arg hw_accel)" />
+        <param name="video_width" value="$(arg video_width)" />
+        <param name="video_height" value="$(arg video_height)" />
+        <param name="low_delay_flags" value="$(arg low_delay_flags)" />
+        <param name="reconnect_delay_ms" value="$(arg reconnect_delay_ms)" />
+        <param name="max_open_retry" value="$(arg max_open_retry)" />
+        <!-- 兼容旧参数名 (如果脚本中也使用 queue_size 等) 可再添加 -->
+    </node>
+
+    <!-- 可选调试图像查看 -->
+    <group if="$(arg debug_view)">
+        <node pkg="image_view" type="image_view" name="ffmpeg_image_view" args="image:=$(arg output_topic)" output="screen" />
+    </group>
+
+</launch>
