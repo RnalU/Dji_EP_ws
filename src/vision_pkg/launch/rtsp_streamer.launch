@@ -1,0 +1,40 @@
+<launch>
+    <!-- RTSP视频流接收器启动文件 -->
+    
+    <!-- 参数配置 -->
+    <arg name="rtsp_url" default="rtsp://192.168.14.253:8554/live" doc="RTSP流地址"/>
+    <arg name="output_topic" default="/vision/gimbal_camera/image_raw" doc="输出图像话题"/>
+    <arg name="fps_limit" default="30" doc="发布帧率限制"/>
+    <arg name="buffer_size" default="1" doc="帧缓冲区大小（建议保持为1以降低延迟）"/>
+    <arg name="reconnect_delay" default="2.0" doc="重连延迟时间（秒）"/>
+    <arg name="use_gstreamer" default="true" doc="是否使用GStreamer（推荐开启以获得更低延迟）"/>
+    <arg name="node_name" default="rtsp_streamer" doc="节点名称"/>
+    <arg name="debug_mode" default="false" doc="是否启用调试模式"/>
+    
+    <!-- RTSP流接收节点 -->
+    <node name="$(arg node_name)" pkg="vision_pkg" type="rtsp_video_stream.py" output="screen" required="true">
+        <!-- 基本参数 -->
+        <param name="rtsp_url" value="$(arg rtsp_url)"/>
+        <param name="output_topic" value="$(arg output_topic)"/>
+        <param name="fps_limit" value="$(arg fps_limit)"/>
+        <param name="buffer_size" value="$(arg buffer_size)"/>
+        <param name="reconnect_delay" value="$(arg reconnect_delay)"/>
+        <param name="use_gstreamer" value="$(arg use_gstreamer)"/>
+        
+        <!-- 重映射话题（如果需要的话） -->
+        <remap from="~image_raw" to="$(arg output_topic)"/>
+    </node>
+    
+    <!-- 可选：启动图像查看器来查看视频流 -->
+    <group if="$(arg debug_mode)">
+        <node name="rtsp_image_view" pkg="image_view" type="image_view" 
+              args="image:=$(arg output_topic)" output="screen" required="false"/>
+    </group>
+    
+    <!-- 可选：启动rqt_image_view用于更好的图像显示 -->
+    <group if="$(arg debug_mode)">
+        <node name="rqt_image_view" pkg="rqt_image_view" type="rqt_image_view" 
+              args="$(arg output_topic)" output="screen" required="false"/>
+    </group>
+
+</launch>
