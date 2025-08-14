@@ -10,7 +10,7 @@ extern std::mutex g_mutex;
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "std_msgs/Float64.h"
-#include "dji_psdk_ros_driver/uavdata.h"
+#include "tta_m3e_rtsp/uavdata.h"
 
 uavData_publish::uavData_publish(ros::NodeHandle *nh, uavData *puavData)
 {
@@ -36,7 +36,7 @@ int uavData_publish::doProxy()
 	int64_t now = Utils::getSystemRunTime();
 	int64_t last_hb_ts = 0;
 
-    ros::Publisher uavdata_pub = m_uavdata_nh->advertise<dji_psdk_ros_driver::uavdata>("uavdata", 1000);
+    ros::Publisher uavdata_pub = m_uavdata_nh->advertise<tta_m3e_rtsp::uavdata>("uavdata", 1000);
 
     ros::Rate loop_rate(10);
 
@@ -44,7 +44,7 @@ int uavData_publish::doProxy()
 
     while(ros::ok())
     {
-        dji_psdk_ros_driver::uavdata uavdata_d;
+        tta_m3e_rtsp::uavdata uavdata_d;
 
         std::unique_lock<std::mutex> lock(g_mutex);
 

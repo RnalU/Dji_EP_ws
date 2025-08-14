@@ -8,10 +8,10 @@
 #include <tf/transform_broadcaster.h>
 #include <geometry_msgs/Quaternion.h>
 #include <math.h>
-#include "dji_psdk_ros_driver/uavdata.h"
+#include "tta_m3e_rtsp/uavdata.h"
 
 // 定义全局变量 uav_data
-dji_psdk_ros_driver::uavdata uav_data = {};
+tta_m3e_rtsp::uavdata uav_data = {};
 
 // 滤波系数
 const float alpha = 0.2;
@@ -23,7 +23,7 @@ float filteredLinearVelocityZ = 0;
 float filteredAngularVelocity = 0;
 
 // 飞行器信息回调函数
-void uavDataCallback(const dji_psdk_ros_driver::uavdata& msg)
+void uavDataCallback(const tta_m3e_rtsp::uavdata& msg)
 {
     uav_data = msg;
     // 指数加权移动平均滤波

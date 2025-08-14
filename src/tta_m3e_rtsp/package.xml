@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>dji_psdk_ros_driver</name>
+  <name>tta_m3e_rtsp</name>
   <version>1.0.0</version>
-  <description>The dji_psdk_ros_driver package</description>
+  <description>The tta_m3e_rtsp package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <maintainer email="tta@todo.todo">tta</maintainer>

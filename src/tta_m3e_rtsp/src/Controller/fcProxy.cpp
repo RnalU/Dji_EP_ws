@@ -8,17 +8,17 @@
 #include "std_msgs/Float32.h"
 #include "std_msgs/Float64.h"
 
-#include "dji_psdk_ros_driver/gimbalControl.h"
-#include "dji_psdk_ros_driver/takeoffOrLanding.h"
-#include "dji_psdk_ros_driver/flightByVel.h"
+#include "tta_m3e_rtsp/gimbalControl.h"
+#include "tta_m3e_rtsp/takeoffOrLanding.h"
+#include "tta_m3e_rtsp/flightByVel.h"
 
 #include "uavData.h"
 #include "publish.h"
 
 uavData *m_puavData = NULL;
 
-bool takeoffOrLanding_serverCB(dji_psdk_ros_driver::takeoffOrLanding::Request  &req,
-    dji_psdk_ros_driver::takeoffOrLanding::Response &res)
+bool takeoffOrLanding_serverCB(tta_m3e_rtsp::takeoffOrLanding::Request  &req,
+    tta_m3e_rtsp::takeoffOrLanding::Response &res)
 {
     res.ack = 1;
 
@@ -45,8 +45,8 @@ bool takeoffOrLanding_serverCB(dji_psdk_ros_driver::takeoffOrLanding::Request  &
   return true;
 }
 
-bool gimbalControl_serverCB(dji_psdk_ros_driver::gimbalControl::Request  &req,
-    dji_psdk_ros_driver::gimbalControl::Response &res)
+bool gimbalControl_serverCB(tta_m3e_rtsp::gimbalControl::Request  &req,
+    tta_m3e_rtsp::gimbalControl::Response &res)
 {
     res.ack = 1;
 
@@ -58,7 +58,7 @@ bool gimbalControl_serverCB(dji_psdk_ros_driver::gimbalControl::Request  &req,
     return true;
 }
 
-void flightByVel_messageCB(const dji_psdk_ros_driver::flightByVel::ConstPtr &msg)
+void flightByVel_messageCB(const tta_m3e_rtsp::flightByVel::ConstPtr &msg)
 {
 
     ttalink_rosuav_ctrl_loop_input_t rosuav_ctrl_loop_input = {0};
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     uavData_publish *m_puavData_publish = new uavData_publish(&n, m_puavData);
     m_puavData_publish->start();
 
-    ros::Subscriber subscriber1 = n.subscribe<dji_psdk_ros_driver::flightByVel>("flightByVel", 1, flightByVel_messageCB);
+    ros::Subscriber subscriber1 = n.subscribe<tta_m3e_rtsp::flightByVel>("flightByVel", 1, flightByVel_messageCB);
     ROS_INFO("Start flightByVel message");
 
     ros::ServiceServer service1 = n.advertiseService("takeoffOrLanding", takeoffOrLanding_serverCB);

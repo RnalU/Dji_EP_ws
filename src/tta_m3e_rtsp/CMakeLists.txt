@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(dji_psdk_ros_driver)
+project(tta_m3e_rtsp)
 
 add_compile_options(-std=c++17)
 
