@@ -414,7 +414,11 @@ class MissionOrchestrator:
         start_detection_topic: str = args.get("start_topic", "")
         target_height: float = float(args.get("final_z", 0.0))
         # 处理精准降落逻辑
-        return self.fm.precision_landing(detection_result_topic, start_detection_topic, target_height)
+        ok = self.fm.precision_landing(detection_result_topic, start_detection_topic, target_height)
+        if self.mission_complete_flag:
+            self._airborne = False
+            self.status_pub.publish(Bool(data=False))
+        return ok
 
     def _do_gimbal_control(self, args: Dict) -> bool:
         yaw = float(args.get("yaw", 0.0))
