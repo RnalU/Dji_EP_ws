@@ -1,10 +1,10 @@
 <launch>
     <!-- FFmpeg RTSP 拉流节点启动文件 -->
-    <arg name="rtsp_url" default="rtsp://192.168.160.253:8554/live" />
+    <arg name="rtsp_url" default="rtsp://192.168.10.107:8554/live" />
     <arg name="output_topic" default="/vision/ffmpeg/image_raw" />
     <arg name="publish_fps" default="30" />
-    <arg name="force_tcp" default="flase" />
-    <arg name="hw_accel" default="auto" />  <!-- auto / none / vaapi / cuda / v4l2m2m -->
+    <arg name="force_tcp" default="true" />
+    <arg name="hw_accel" default="cuda" />  <!-- auto / none / vaapi / cuda / v4l2m2m -->
     <arg name="video_width" default="640" />  <!-- 0 = 不强制缩放 -->
     <arg name="video_height" default="480" />
     <arg name="low_delay_flags" default="true" />
@@ -29,8 +29,8 @@
     </node>
 
     <!-- 可选调试图像查看 -->
-    <group if="$(arg debug_view)">
+    <!-- <group if="$(arg debug_view)">
         <node pkg="image_view" type="image_view" name="ffmpeg_image_view" args="image:=$(arg output_topic)" output="screen" />
-    </group>
+    </group> -->
 
 </launch>
