@@ -58,12 +58,16 @@ find_package(OpenCV 4 REQUIRED)
 add_message_files(
   FILES
   QRCodeResult.msg
+  Detection.msg
+  UserRect.msg
+  YOLOResult.msg
 )
 
 ## Generate services in the 'srv' folder
 add_service_files(
   FILES
   DetectQRCode.srv
+  DetectYOLO.srv
 )
 
 ## Generate actions in the 'action' folder

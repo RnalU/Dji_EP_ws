@@ -1,0 +1,5 @@
+sensor_msgs/Image image
+---
+bool success
+string message
+YOLOResult result

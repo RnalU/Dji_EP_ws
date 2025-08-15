@@ -1,0 +1,45 @@
+<launch>
+    <!-- YOLO ONNX 检测节点启动文件 (针对 yolo_onnx_detector.py 实际参数) -->
+
+    <!-- ================== 可配置参数声明 (roslaunch 可覆盖) ================== -->
+    <arg name="node_name"      default="yolo_detector" />
+    <arg name="output_screen"  default="true" />
+    <arg name="debug_mode"     default="true" />
+    <arg name="publish_result" default="true" />
+    <arg name="image_topic"    default="/vision/ffmpeg/image_raw" />
+    <arg name="onnx_model"     default="$(find vision_pkg)/model/fruit_best.onnx" />
+    <arg name="names_file"     default="$(find vision_pkg)/model/user_voc.yaml" />
+    <arg name="img_size"       default="640" />
+    <arg name="conf_thres"     default="0.6" />
+    <arg name="iou_thres"      default="0.45" />
+    <arg name="max_det"        default="1000" />
+    <arg name="device"         default="cuda" /> <!-- 留空=CPU, 可填 cuda -->
+    <arg name="classes"        default="" /> <!-- 逗号分隔类ID列表, 留空=全部 -->
+    <arg name="agnostic_nms"   default="false" />
+
+    <!-- ================== 节点启动 ================== -->
+    <node name="$(arg node_name)" pkg="vision_pkg" type="yolo_onnx_detector.py" output="screen" >
+        <param name="debug_mode"     value="$(arg debug_mode)" />
+        <param name="publish_result" value="$(arg publish_result)" />
+        <param name="image_topic"    value="$(arg image_topic)" />
+        <param name="onnx_model"     value="$(arg onnx_model)" />
+        <param name="names_file"     value="$(arg names_file)" />
+        <param name="img_size"       value="$(arg img_size)" />
+        <param name="conf_thres"     value="$(arg conf_thres)" />
+        <param name="iou_thres"      value="$(arg iou_thres)" />
+        <param name="max_det"        value="$(arg max_det)" />
+        <param name="device"         value="$(arg device)" />
+        <!-- classes 参数：脚本读取 ~classes (list)。支持传空或列表。这里如果非空, 可用 rosparam yaml 文件方式更灵活 -->
+        <param name="classes"        value="$(arg classes)" />
+        <param name="agnostic_nms"   value="$(arg agnostic_nms)" />
+    </node>
+
+    <!-- 可选: 调试图像查看 (仅在 debug_mode=true 且需要 GUI 时) -->
+    <!--
+    <group if="$(arg debug_mode)">
+        <node pkg="image_view" type="image_view" name="yolo_debug_view" args="image:=$(arg node_name)/yolo_debug_image" output="screen" />
+    </group>
+    -->
+
+    <!-- 使用: roslaunch vision_pkg yolo_detection.launch image_topic:=/vision/ffmpeg/image_raw device:=cuda conf_thres:=0.5 -->
+</launch>

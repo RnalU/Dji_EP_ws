@@ -3,7 +3,7 @@
     
     <!-- 参数 -->
     <arg name="debug_mode" default="true" doc="是否启用调试模式"/>
-    <arg name="image_topic" default="/uav1/gimbal_camera/image_raw" doc="输入图像话题"/>
+    <arg name="image_topic" default="/vision/ffmpeg/image_raw" doc="输入图像话题"/>
     <arg name="publish_result" default="true" doc="是否发布检测结果"/>
     <arg name="node_name" default="qrcode_detector" doc="节点名称"/>
     

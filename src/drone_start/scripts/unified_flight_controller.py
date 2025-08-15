@@ -32,14 +32,14 @@ from nav_msgs.msg import Odometry
 from vision_pkg.msg import QRCodeResult
 
 # DJI PSDK 消息和服务
-from dji_psdk_ros_driver.msg import flightByVel, uavdata
-from dji_psdk_ros_driver.srv import takeoffOrLanding, takeoffOrLandingRequest
+from tta_m3e_rtsp.msg import flightByVel, uavdata
+from tta_m3e_rtsp.srv import takeoffOrLanding, takeoffOrLandingRequest
 
 from flight_manager import FlightManager
 
 # 云台控制相关导入
 try:
-    from dji_psdk_ros_driver.srv import gimbalControl, gimbalControlRequest
+    from tta_m3e_rtsp.srv import gimbalControl, gimbalControlRequest
     _GIMBAL_AVAILABLE_IMPORT = True
 except Exception:
     _GIMBAL_AVAILABLE_IMPORT = False
@@ -1442,7 +1442,7 @@ def demo_basic_flight():
 
         # controller.hold(5)
 
-        controller.goto(1.2, 2.5, 1)
+        # controller.goto(1.2, 2.5, 1)
         rospy.sleep(2)
         # 高级降落
         controller.precision_landing("/vision/qrcode_result", "/start_qr_detection", 0.15, 640, 480, 60, 30)
